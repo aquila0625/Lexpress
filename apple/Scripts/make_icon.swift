@@ -11,6 +11,24 @@ func color(_ hex: UInt32, _ alpha: CGFloat = 1) -> NSColor {
             blue: CGFloat(hex & 0xFF) / 255, alpha: alpha)
 }
 
+func pingfang(_ size: CGFloat) -> NSFont {
+    NSFont(name: "PingFangSC-Semibold", size: size) ?? .systemFont(ofSize: size, weight: .semibold)
+}
+
+func rounded(_ size: CGFloat) -> NSFont {
+    let base = NSFont.systemFont(ofSize: size, weight: .heavy)
+    return base.fontDescriptor.withDesign(.rounded).flatMap { NSFont(descriptor: $0, size: size) } ?? base
+}
+
+/// 按字形的实际墨迹范围居中，而不是带行距的排版框
+func text(_ string: String, font: NSFont, color: NSColor, center: NSPoint) {
+    let line = CTLineCreateWithAttributedString(NSAttributedString(string: string, attributes: [.font: font, .foregroundColor: color]))
+    let ink = CTLineGetBoundsWithOptions(line, .useGlyphPathBounds)
+    let context = NSGraphicsContext.current!.cgContext
+    context.textPosition = CGPoint(x: center.x - ink.midX, y: center.y - ink.midY)
+    CTLineDraw(line, context)
+}
+
 func polygon(_ points: [NSPoint]) -> NSBezierPath {
     let path = NSBezierPath()
     path.move(to: points[0])
@@ -56,12 +74,15 @@ func overlap(_ a: NSRect, _ b: NSRect, radius: CGFloat) {
 
 // 以下四个方案都画在 1024×1024 的坐标里，原点在左下角。
 
-/// E：两个对话气泡交叠，重合的部分是橙色 —— 两种语言，共同的意思
+/// E：两个对话气泡交叠，一个写着拉丁字母 A，一个写着汉字“文”，重合的部分是橙色 —— 一看就是翻译
 func conceptE() {
     let first = NSRect(x: 150, y: 430, width: 450, height: 400), second = NSRect(x: 420, y: 230, width: 450, height: 400)
     shape(second, radius: 96, tail: [pt(700, 250), pt(806, 128), pt(800, 250)], alpha: 0.6)
     shape(first, radius: 96, tail: [pt(224, 450), pt(218, 328), pt(330, 450)])
     overlap(first, second, radius: 96)
+    // 字放在各自气泡没被遮住的那一块里
+    text("A", font: rounded(270), color: color(0x0B5FE3), center: pt(298, 664))
+    text("文", font: pingfang(214), color: color(0x0A4FC4), center: pt(738, 420))
 }
 
 /// F：对话气泡里一道闪电 —— 说出来，马上懂
