@@ -40,7 +40,7 @@ struct SettingsView: View {
                     }
                     TextField("或手动填写模型名称", text: $ai.model)
                         .autocorrectionDisabled()
-                    Toggle("翻译句子后自动校准", isOn: $ai.autoCalibrate)
+                    Toggle("AI 优化：翻译句子后自动优化译文", isOn: $ai.autoCalibrate)
                     Button {
                         test()
                     } label: {
@@ -55,7 +55,7 @@ struct SettingsView: View {
                 } header: {
                     Text("AI 增强（可选）")
                 } footer: {
-                    Text("Lexpress 不提供 AI 额度，也不经过任何中间服务器：你自己在服务商那里注册，把 API Key 填在这里，费用由服务商向你收取。Key 只保存在本机钥匙串。注意 ChatGPT 的会员订阅不包含 API 额度，API Key 要在 OpenAI 开发者平台单独申请。不填也能使用词典、翻译、朗读和图片翻译。AI 用于校准句子翻译和帮你写回复；关闭自动校准时，只有点“AI 校准”才会运行。")
+                    Text("Lexpress 不提供 AI 额度，也不经过任何中间服务器：你自己在服务商那里注册，把 API Key 填在这里，费用由服务商向你收取。Key 只保存在本机钥匙串。注意 ChatGPT 的会员订阅不包含 API 额度，API Key 要在 OpenAI 开发者平台单独申请。不填也能使用词典、翻译、朗读和图片翻译。AI 用于优化句子翻译和帮你写回复；上面的开关关闭时不会自动优化，只有你点“AI 优化”才会运行。每次优化后会显示消耗的 token 数。")
                 }
 
                 Section("朗读") {

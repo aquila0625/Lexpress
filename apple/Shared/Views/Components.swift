@@ -105,7 +105,7 @@ struct Block<Content: View>: View {
     }
 }
 
-/// 小标签：翻译来源、“AI 已校准”等
+/// 小标签：翻译来源、“AI 已优化”等
 struct Chip: View {
     let text: String
     let systemName: String

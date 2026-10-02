@@ -5,6 +5,21 @@ struct AIError: LocalizedError {
     var errorDescription: String? { message }
 }
 
+/// 一次 AI 请求消耗的 token 数，由服务商在响应里给出
+struct AIUsage: Equatable {
+    let input: Int
+    let output: Int
+    var total: Int { input + output }
+
+    /// 例如 “本次消耗 286 tokens（输入 231 · 输出 55）”
+    var summary: String { "本次消耗 \(total) tokens（输入 \(input) · 输出 \(output)）" }
+}
+
+struct AIResponse {
+    let text: String
+    let usage: AIUsage?
+}
+
 /// 用用户自己的 key 直接请求 AI 服务商，中间不经过任何 Lexpress 的服务器。
 enum AIClient {
     struct Config {
@@ -20,7 +35,7 @@ enum AIClient {
         return Config(provider: s.provider, apiKey: s.apiKey.trimmed, model: s.model.trimmed, baseURL: s.baseURL.trimmed)
     }
 
-    static func complete(system: String, user: String, config: Config) async throws -> String {
+    static func complete(system: String, user: String, config: Config) async throws -> AIResponse {
         guard !config.apiKey.isEmpty else { throw AIError(message: "还没有填写 API Key。") }
         switch config.provider {
         case .claude: return try await claude(system: system, user: user, config: config)
@@ -30,7 +45,7 @@ enum AIClient {
 
     // MARK: Claude（Anthropic Messages API）
 
-    private static func claude(system: String, user: String, config: Config) async throws -> String {
+    private static func claude(system: String, user: String, config: Config) async throws -> AIResponse {
         var request = URLRequest(url: URL(string: "https://api.anthropic.com/v1/messages")!, timeoutInterval: 120)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -59,7 +74,8 @@ enum AIClient {
             .compactMap { $0["text"] as? String }
             .joined()
         guard !text.trimmed.isEmpty else { throw AIError(message: "AI 没有返回内容。") }
-        return text.trimmed
+        let usage = json["usage"] as? [String: Any]
+        return AIResponse(text: text.trimmed, usage: AIClient.usage(input: usage?["input_tokens"], output: usage?["output_tokens"]))
     }
 
     private static func supportsDefaultFallback(_ model: String) -> Bool {
@@ -68,7 +84,7 @@ enum AIClient {
 
     // MARK: OpenAI 兼容接口（ChatGPT、DeepSeek 和自定义服务商）
 
-    private static func openAICompatible(system: String, user: String, config: Config) async throws -> String {
+    private static func openAICompatible(system: String, user: String, config: Config) async throws -> AIResponse {
         var base = config.baseURL
         while base.hasSuffix("/") { base.removeLast() }
         guard let url = URL(string: base + "/chat/completions"), url.scheme?.hasPrefix("http") == true else {
@@ -88,10 +104,16 @@ enum AIClient {
         guard let text = message?["content"] as? String, !text.trimmed.isEmpty else {
             throw AIError(message: "AI 没有返回内容。")
         }
-        return text.trimmed
+        let usage = json["usage"] as? [String: Any]
+        return AIResponse(text: text.trimmed, usage: AIClient.usage(input: usage?["prompt_tokens"], output: usage?["completion_tokens"]))
     }
 
     // MARK: 公共
+
+    private static func usage(input: Any?, output: Any?) -> AIUsage? {
+        guard let input = input as? Int, let output = output as? Int else { return nil }
+        return AIUsage(input: input, output: output)
+    }
 
     private static func send(_ request: URLRequest) async throws -> [String: Any] {
         let data: Data, response: URLResponse

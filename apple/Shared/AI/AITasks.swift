@@ -17,11 +17,12 @@ enum AITasks {
     struct Reply {
         let text: String
         let chinese: String
+        let usage: AIUsage?
     }
 
     // MARK: 校准译文
 
-    static func calibrate(source: String, machine: String, sourceIsChinese: Bool, config: AIClient.Config) async throws -> String {
+    static func calibrate(source: String, machine: String, sourceIsChinese: Bool, config: AIClient.Config) async throws -> AIResponse {
         let system = """
         You review machine translations between English and Simplified Chinese for a dictionary and translation app. \
         The user gives you a source text and a machine translation of it.
@@ -96,8 +97,8 @@ enum AITasks {
             Revise the previous reply according to the requested change.
             """
         }
-        let output = try await AIClient.complete(system: system, user: user, config: config)
-        let parts = output.components(separatedBy: separator)
-        return Reply(text: parts[0].trimmed, chinese: parts.count > 1 ? parts[1].trimmed : "")
+        let response = try await AIClient.complete(system: system, user: user, config: config)
+        let parts = response.text.components(separatedBy: separator)
+        return Reply(text: parts[0].trimmed, chinese: parts.count > 1 ? parts[1].trimmed : "", usage: response.usage)
     }
 }

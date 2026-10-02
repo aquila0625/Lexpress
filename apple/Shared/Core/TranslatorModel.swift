@@ -282,9 +282,11 @@ final class TranslatorModel: ObservableObject {
         Task {
             defer { isCalibrating = false }
             do {
-                let improved = try await AITasks.calibrate(source: result.source, machine: result.translation,
-                                                           sourceIsChinese: result.sourceIsChinese, config: config)
+                let response = try await AITasks.calibrate(source: result.source, machine: result.translation,
+                                                            sourceIsChinese: result.sourceIsChinese, config: config)
+                let improved = response.text
                 guard id == requestID, case .sentence(var current) = phase else { return }
+                current.aiUsage = response.usage
                 if improved != current.translation {
                     current.machineTranslation = current.translation
                     current.translation = improved

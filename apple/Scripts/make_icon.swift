@@ -1,27 +1,14 @@
 // 生成 App 图标。在 apple/ 目录下运行：
-//   swiftc -O Scripts/make_icon.swift -o build/make_icon && build/make_icon [A|B|C|D]
-// 不带参数时用方案 A。iOS 用整张铺满的方图（系统自己裁圆角），macOS 用带边距的圆角方块。
+//   swiftc -O Scripts/make_icon.swift -o build/make_icon && build/make_icon [E|F|G|H]
+// 不带参数时用方案 E。四个方案都不含任何语言的文字，面向所有语言的用户。iOS 用整张铺满的方图（系统自己裁圆角），macOS 用带边距的圆角方块。
 import AppKit
 
 let outDir = "Shared/Assets.xcassets/AppIcon.appiconset"
-let concept = CommandLine.arguments.count > 1 ? CommandLine.arguments[1].uppercased() : "A"
+let concept = CommandLine.arguments.count > 1 ? CommandLine.arguments[1].uppercased() : "E"
 
 func color(_ hex: UInt32, _ alpha: CGFloat = 1) -> NSColor {
     NSColor(srgbRed: CGFloat((hex >> 16) & 0xFF) / 255, green: CGFloat((hex >> 8) & 0xFF) / 255,
             blue: CGFloat(hex & 0xFF) / 255, alpha: alpha)
-}
-
-func pingfang(_ size: CGFloat) -> NSFont {
-    NSFont(name: "PingFangSC-Semibold", size: size) ?? .systemFont(ofSize: size, weight: .semibold)
-}
-
-/// 按字形的实际墨迹范围居中，而不是带行距的排版框
-func text(_ string: String, font: NSFont, color: NSColor, center: NSPoint) {
-    let line = CTLineCreateWithAttributedString(NSAttributedString(string: string, attributes: [.font: font, .foregroundColor: color]))
-    let ink = CTLineGetBoundsWithOptions(line, .useGlyphPathBounds)
-    let context = NSGraphicsContext.current!.cgContext
-    context.textPosition = CGPoint(x: center.x - ink.midX, y: center.y - ink.midY)
-    CTLineDraw(line, context)
 }
 
 func polygon(_ points: [NSPoint]) -> NSBezierPath {
@@ -43,85 +30,85 @@ func soft(_ path: NSBezierPath, _ fill: NSColor, round: CGFloat = 28) {
     path.stroke()
 }
 
-func line(from: NSPoint, to: NSPoint, width: CGFloat, _ stroke: NSColor) {
-    let path = NSBezierPath()
-    path.move(to: from)
-    path.line(to: to)
-    path.lineWidth = width
-    path.lineCapStyle = .round
-    stroke.set()
-    path.stroke()
-}
+let orange = color(0xFFA91F)
 
-/// 整体向右倾斜，带一点速度感
-func slanted(_ amount: CGFloat, _ body: () -> Void) {
+/// 圆角形状，可带对话气泡的小尾巴；半透明时整体合成，尾巴和主体之间不出接缝
+func shape(_ rect: NSRect, radius: CGFloat, tail: [NSPoint] = [], alpha: CGFloat = 1) {
     let context = NSGraphicsContext.current!.cgContext
     context.saveGState()
-    context.translateBy(x: 512, y: 512)
-    context.concatenate(CGAffineTransform(a: 1, b: 0, c: amount, d: 1, tx: 0, ty: 0))
-    context.translateBy(x: -512, y: -512)
-    body()
+    context.setAlpha(alpha)
+    context.beginTransparencyLayer(auxiliaryInfo: nil)
+    NSColor.white.set()
+    NSBezierPath(roundedRect: rect, xRadius: radius, yRadius: radius).fill()
+    if !tail.isEmpty { soft(polygon(tail), .white, round: 22) }
+    context.endTransparencyLayer()
     context.restoreGState()
+}
+
+/// 两个圆角矩形重叠的部分涂成橙色
+func overlap(_ a: NSRect, _ b: NSRect, radius: CGFloat) {
+    NSGraphicsContext.saveGraphicsState()
+    NSBezierPath(roundedRect: a, xRadius: radius, yRadius: radius).addClip()
+    orange.set()
+    NSBezierPath(roundedRect: b, xRadius: radius, yRadius: radius).fill()
+    NSGraphicsContext.restoreGraphicsState()
 }
 
 // 以下四个方案都画在 1024×1024 的坐标里，原点在左下角。
 
-/// A：L 的一横变成箭头，指向“文” —— 英文到中文，快
-func conceptA() {
-    soft(polygon([pt(236, 796), pt(372, 796), pt(372, 384), pt(628, 384), pt(628, 468), pt(822, 316),
-                  pt(628, 164), pt(628, 248), pt(236, 248)]), .white)
-    text("文", font: pingfang(350), color: .white, center: pt(640, 660))
+/// E：两个对话气泡交叠，重合的部分是橙色 —— 两种语言，共同的意思
+func conceptE() {
+    let first = NSRect(x: 150, y: 430, width: 450, height: 400), second = NSRect(x: 420, y: 230, width: 450, height: 400)
+    shape(second, radius: 96, tail: [pt(700, 250), pt(806, 128), pt(800, 250)], alpha: 0.6)
+    shape(first, radius: 96, tail: [pt(224, 450), pt(218, 328), pt(330, 450)])
+    overlap(first, second, radius: 96)
 }
 
-/// B：摊开的词典，中缝是一道闪电 —— 词典，快
-func conceptB() {
-    func page(_ sign: CGFloat, _ fill: NSColor) {
-        func x(_ offset: CGFloat) -> CGFloat { 512 + sign * offset }
+/// F：对话气泡里一道闪电 —— 说出来，马上懂
+func conceptF() {
+    shape(NSRect(x: 170, y: 330, width: 684, height: 500), radius: 170, tail: [pt(300, 352), pt(268, 176), pt(476, 352)])
+    soft(polygon([pt(566, 790), pt(398, 560), pt(506, 560), pt(452, 372), pt(640, 610), pt(530, 610)]), orange, round: 18)
+}
+
+/// G：» 既是很多语言里的引号，也是“快进” —— 快的话语
+func conceptG() {
+    func chevron(_ x: CGFloat, alpha: CGFloat) {
+        let context = NSGraphicsContext.current!.cgContext
+        context.saveGState()
+        context.setAlpha(alpha)
+        context.beginTransparencyLayer(auxiliaryInfo: nil)
         let path = NSBezierPath()
-        path.move(to: pt(x(26), 716))
-        path.curve(to: pt(x(352), 760), controlPoint1: pt(x(120), 790), controlPoint2: pt(x(250), 790))
-        path.line(to: pt(x(352), 310))
-        path.curve(to: pt(x(26), 266), controlPoint1: pt(x(250), 340), controlPoint2: pt(x(120), 340))
-        path.close()
-        soft(path, fill, round: 30)
+        path.move(to: pt(x, 770))
+        path.line(to: pt(x + 245, 512))
+        path.line(to: pt(x, 254))
+        path.lineWidth = 132
+        path.lineCapStyle = .round
+        path.lineJoinStyle = .round
+        NSColor.white.set()
+        path.stroke()
+        context.endTransparencyLayer()
+        context.restoreGState()
     }
-    page(-1, .white)
-    page(1, color(0xFFFFFF, 0.78))
-    let bolt = polygon([pt(590, 880), pt(392, 520), pt(506, 520), pt(440, 150), pt(640, 580), pt(522, 580)])
-    color(0x0B63E6).set()
-    bolt.lineJoinStyle = .round
-    bolt.lineWidth = 64
-    bolt.stroke()
-    soft(bolt, color(0xFFB21A), round: 16)
+    chevron(270, alpha: 0.55)
+    chevron(510, alpha: 1)
 }
 
-/// C：Lx 字标，x 的一笔是橙色 —— 品牌缩写
-func conceptC() {
-    slanted(0.16) {
-        soft(polygon([pt(196, 790), pt(336, 790), pt(336, 374), pt(500, 374), pt(500, 234), pt(196, 234)]), .white, round: 24)
-        line(from: pt(560, 294), to: pt(820, 600), width: 118, .white)
-        line(from: pt(560, 600), to: pt(820, 294), width: 118, color(0xFFB21A))
-    }
-}
-
-/// D：倾斜的“译”字加三道速度线 —— 快译
-func conceptD() {
-    slanted(0.2) {
-        text("译", font: pingfang(560), color: .white, center: pt(596, 512))
-        line(from: pt(118, 660), to: pt(268, 660), width: 46, color(0xFFFFFF, 0.72))
-        line(from: pt(64, 512), to: pt(268, 512), width: 46, color(0xFFFFFF, 0.72))
-        line(from: pt(150, 364), to: pt(268, 364), width: 46, color(0xFFFFFF, 0.72))
-    }
+/// H：两根圆角条拼成 L，拐角重合处是橙色 —— 品牌首字母，两种语言在这里相接
+func conceptH() {
+    let vertical = NSRect(x: 236, y: 226, width: 214, height: 590), horizontal = NSRect(x: 236, y: 226, width: 570, height: 214)
+    shape(horizontal, radius: 107, alpha: 0.6)
+    shape(vertical, radius: 107)
+    overlap(vertical, horizontal, radius: 107)
 }
 
 func drawLogo() {
     // 和 App 里的主色一致：亮蓝到天蓝
     NSGradient(colors: [color(0x0A5CE0), color(0x34A4FF)])!.draw(in: NSRect(x: 0, y: 0, width: 1024, height: 1024), angle: 50)
     switch concept {
-    case "B": conceptB()
-    case "C": conceptC()
-    case "D": conceptD()
-    default: conceptA()
+    case "F": conceptF()
+    case "G": conceptG()
+    case "H": conceptH()
+    default: conceptE()
     }
 }
 

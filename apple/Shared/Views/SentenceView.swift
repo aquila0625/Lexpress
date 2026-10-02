@@ -15,14 +15,14 @@ struct SentenceView: View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 8) {
                 if result.calibrated {
-                    Chip(text: result.machineTranslation == nil ? "AI 已校准 · 无需修改" : "AI 已校准",
+                    Chip(text: result.machineTranslation == nil ? "AI 已优化 · 无需修改" : "AI 已优化",
                          systemName: "sparkles", ai: true)
                 } else {
                     Chip(text: result.engine, systemName: "checkmark")
                 }
                 if model.isCalibrating {
                     ProgressView().controlSize(.small)
-                    Text("AI 校准中…").font(.footnote).foregroundStyle(.secondary)
+                    Text("AI 优化中…").font(.footnote).foregroundStyle(.secondary)
                 }
             }
 
@@ -32,13 +32,19 @@ struct SentenceView: View {
                 .textSelection(.enabled)
 
             if let machine = result.machineTranslation {
-                (Text("校准前　").fontWeight(.semibold) + Text(machine))
+                (Text("优化前　").fontWeight(.semibold) + Text(machine))
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                     .padding(12)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(Color.lxSurface, in: .rect(cornerRadius: 14))
                     .textSelection(.enabled)
+            }
+
+            if let usage = result.aiUsage {
+                Text(usage.summary)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(Color.lxAI)
             }
 
             if let error = model.aiError {
@@ -92,7 +98,7 @@ struct SentenceView: View {
     @ViewBuilder
     private var aiActions: some View {
         if !result.calibrated, !model.isCalibrating {
-            GlassPillButton(title: "AI 校准", systemName: "sparkles", tint: .lxAI) {
+            GlassPillButton(title: "AI 优化", systemName: "sparkles", tint: .lxAI) {
                 ai.isConfigured ? model.calibrate() : onNeedAI()
             }
         }

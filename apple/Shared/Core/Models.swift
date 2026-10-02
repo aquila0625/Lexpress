@@ -100,6 +100,8 @@ struct SentenceResult {
     /// AI 校准后为 true；校准前的机器翻译保存在 machineTranslation（没有改动时为 nil）
     var calibrated = false
     var machineTranslation: String?
+    /// AI 优化这一次消耗的 token 数
+    var aiUsage: AIUsage?
 }
 
 enum Phase {

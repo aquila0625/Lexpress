@@ -100,6 +100,12 @@ struct ReplyView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(Color.lxAISoft, in: .rect(cornerRadius: 18))
 
+        if let usage = reply.usage {
+            Text(usage.summary)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(Color.lxAI)
+        }
+
         if !reply.chinese.isEmpty {
             VStack(alignment: .leading, spacing: 6) {
                 SectionHeader(title: "中文对照")
