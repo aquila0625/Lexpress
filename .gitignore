@@ -1,0 +1,16 @@
+# macOS
+.DS_Store
+
+# Swift Package Manager
+.build/
+build/
+
+# Xcode
+*.xcodeproj
+xcuserdata/
+DerivedData/
+*.xcworkspace/xcuserdata/
+
+# Secrets: API keys are entered in the app and stored in the Keychain, never in the repo
+.env
+*.local
