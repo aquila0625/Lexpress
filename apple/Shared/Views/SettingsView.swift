@@ -5,7 +5,6 @@ struct SettingsView: View {
     @ObservedObject private var ai = AISettings.shared
     @AppStorage(SettingsKey.accent) private var accent = 2
     @AppStorage(SettingsKey.autoSpeak) private var autoSpeak = false
-    @AppStorage("profile.name") private var profileName = ""
 
     @State private var testing = false
     @State private var testResult: String?
@@ -13,14 +12,6 @@ struct SettingsView: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section {
-                    TextField("你的名字", text: $profileName)
-                } header: {
-                    Text("我的")
-                } footer: {
-                    Text("只保存在本机，显示在会话列表的最下面。")
-                }
-
                 Section {
                     Picker("服务商", selection: $ai.provider) {
                         ForEach(AIProvider.allCases) { Text($0.title).tag($0) }

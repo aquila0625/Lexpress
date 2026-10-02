@@ -102,6 +102,16 @@ struct SentenceResult: Codable {
     var machineTranslation: String?
     /// AI 优化这一次消耗的 token 数
     var aiUsage: AIUsage?
+
+    // 会话里的 AI 优化：translation 始终是机器翻译，AI 的结果单独保存，可以随时开关、不用重新请求
+    var aiTranslation: String?
+    var aiShown: Bool?
+    /// 优化时用的服务商和模型，例如 “ChatGPT · gpt-6-luna”
+    var aiModel: String?
+
+    var showsAI: Bool { aiShown == true && aiTranslation != nil }
+    /// 当前显示的译文
+    var displayed: String { showsAI ? aiTranslation ?? translation : translation }
 }
 
 enum Phase {

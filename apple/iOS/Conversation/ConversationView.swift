@@ -79,14 +79,10 @@ struct ConversationView: View {
             OutlineView(turns: session?.turns ?? []) { scrollTarget = $0 }
         }
         .sheet(item: Binding(get: { wordToShow.map(IdentifiedWord.init) }, set: { wordToShow = $0?.entry })) { item in
-            WordDetailView(word: item.entry.word, entry: item.entry) { word in
-                wordToShow = nil
-                controller.draft = word
-                controller.send()
-            }
+            WordSheet(word: item.entry.word, entry: item.entry) { await controller.quickTranslate($0) }
         }
         .sheet(item: Binding(get: { replyTo.map(IdentifiedSentence.init) }, set: { replyTo = $0?.result })) { item in
-            ReplyView(received: item.result.source, receivedTranslation: item.result.translation)
+            ReplyView(received: item.result.source, receivedTranslation: item.result.displayed)
         }
         .fullScreenCover(item: $editingImage) { ref in
             ImageEditView(controller: controller, store: store, turnID: ref.turnID, imageID: ref.imageID)

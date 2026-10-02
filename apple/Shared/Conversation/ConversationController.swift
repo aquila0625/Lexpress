@@ -30,8 +30,9 @@ final class ConversationController: ObservableObject {
     }
 
     func newSession(title: String? = nil, sceneID: UUID? = nil, aiEnabled: Bool? = nil) {
-        // 当前会话还是空的、也没起名，就直接复用它
-        if title == nil, sceneID == nil, let current, current.turns.isEmpty, current.autoTitled {
+        // 当前会话还是空的、也没起名，就直接复用它（移到要的场景里）
+        if title == nil, let current, current.turns.isEmpty, current.autoTitled {
+            store.moveSession(current.id, toScene: sceneID, before: nil)
             return
         }
         let session = store.createSession(title: title, sceneID: sceneID, aiEnabled: aiEnabled ?? AISettings.shared.autoCalibrate)
@@ -95,7 +96,7 @@ final class ConversationController: ObservableObject {
 
     /// 把译文放到原文的位置再反向翻译一次，作为新的一轮
     func swap(_ turn: Turn) {
-        guard let translation = turn.sentence?.translation else { return }
+        guard let translation = turn.sentence?.displayed else { return }
         let new = Turn(source: translation, sourceIsChinese: !turn.sourceIsChinese, manualDirection: true)
         let sessionID = currentID
         store.appendTurn(new, to: sessionID)
@@ -264,29 +265,50 @@ final class ConversationController: ObservableObject {
 
     // MARK: AI 优化
 
-    func optimize(_ turnID: UUID) {
-        let sessionID = currentID
-        Task { await optimize(sessionID, turnID) }
+    /// 点“AI 优化”：打开时有之前的结果就直接用，没有才请求；再点一次关掉，显示机器翻译
+    func toggleAI(_ turnID: UUID) {
+        guard let sentence = store.turn(currentID, turnID)?.sentence else { return }
+        if sentence.showsAI {
+            store.updateTurn(currentID, turnID) { $0.sentence?.aiShown = false }
+        } else if sentence.aiTranslation != nil {
+            store.updateTurn(currentID, turnID) { $0.sentence?.aiShown = true }
+        } else {
+            let sessionID = currentID
+            Task { await optimize(sessionID, turnID) }
+        }
     }
 
-    private func optimize(_ sessionID: UUID, _ turnID: UUID) async {
-        guard let turn = store.turn(sessionID, turnID), let sentence = turn.sentence,
-              !sentence.calibrated, !turn.isOptimizing else { return }
+    /// 换了服务商或模型后，重新用 AI 优化一次
+    func reoptimize(_ turnID: UUID) {
+        let sessionID = currentID
+        Task { await optimize(sessionID, turnID, force: true) }
+    }
+
+    /// 完整词条里查不到的词组，用和会话相同的方式翻译
+    func quickTranslate(_ text: String) async -> String? {
+        try? await translateSentence(text, chinese: text.isMostlyChinese).0
+    }
+
+    private func optimize(_ sessionID: UUID, _ turnID: UUID, force: Bool = false) async {
+        guard let turn = store.turn(sessionID, turnID), let sentence = turn.sentence, !turn.isOptimizing else { return }
+        if sentence.aiTranslation != nil, !force {
+            store.updateTurn(sessionID, turnID) { $0.sentence?.aiShown = true }
+            return
+        }
         store.updateTurn(sessionID, turnID) {
             $0.isOptimizing = true
             $0.aiError = nil
         }
         do {
+            let config = AIClient.currentConfig
             let response = try await AITasks.calibrate(source: sentence.source, machine: sentence.translation,
-                                                       sourceIsChinese: sentence.sourceIsChinese, config: AIClient.currentConfig)
+                                                       sourceIsChinese: sentence.sourceIsChinese, config: config)
             store.updateTurn(sessionID, turnID) {
                 guard var s = $0.sentence else { return }
-                if response.text != s.translation {
-                    s.machineTranslation = s.translation
-                    s.translation = response.text
-                }
-                s.calibrated = true
+                s.aiTranslation = response.text
+                s.aiShown = true
                 s.aiUsage = response.usage
+                s.aiModel = "\(config.provider.title) · \(config.model)"
                 $0.sentence = s
                 $0.isOptimizing = false
             }

@@ -9,7 +9,7 @@ struct ConversationRootView: View {
     @State private var sheet: RootSheet?
 
     enum RootSheet: Identifiable {
-        case settings, newSession, newScene, editScene(UUID), editList, starred
+        case settings, newSession, newScene, editScene(UUID), starred
 
         var id: String {
             switch self {
@@ -17,7 +17,6 @@ struct ConversationRootView: View {
             case .newSession: "newSession"
             case .newScene: "newScene"
             case .editScene(let id): "scene-" + id.uuidString
-            case .editList: "editList"
             case .starred: "starred"
             }
         }
@@ -67,13 +66,7 @@ struct ConversationRootView: View {
             case .newSession: NewSessionView(controller: controller, store: controller.store)
             case .newScene: SceneEditorView(store: controller.store, sceneID: nil)
             case .editScene(let id): SceneEditorView(store: controller.store, sceneID: id)
-            case .editList: ListEditView(store: controller.store)
-            case .starred: StarredWordsView { word in
-                self.sheet = nil
-                setDrawer(false)
-                controller.draft = word
-                controller.send()
-            }
+            case .starred: StarredWordsView { await controller.quickTranslate($0) }
             }
         }
     }
@@ -84,7 +77,6 @@ struct ConversationRootView: View {
             sheet = .newSession
         case .newScene: sheet = .newScene
         case .editScene(let id): sheet = .editScene(id)
-        case .editList: sheet = .editList
         case .starred: sheet = .starred
         case .settings: sheet = .settings
         }

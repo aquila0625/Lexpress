@@ -1,55 +1,84 @@
 import SwiftUI
 
-/// 完整词条。传入 entry 时直接显示，否则按 word 去查。
-struct WordDetailView: View {
+/// 完整词条弹窗：顶部有下拉指示条，往下拉就关掉。点词组、同根词时在弹窗里继续往下查，不发到会话里。
+struct WordSheet: View {
     let word: String
     var entry: WordEntry?
-    /// 点词组、同根词时：在当前会话里查这个词
-    let onLookup: (String) -> Void
+    /// 词典里查不到的词组，用它翻译
+    let translate: (String) async -> String?
 
-    @Environment(\.dismiss) private var dismiss
-    @State private var loaded: WordEntry?
-    @State private var failed = false
+    @State private var path: [String] = []
 
     var body: some View {
-        NavigationStack {
-            ScrollView {
-                if let current = entry ?? loaded {
-                    WordView(entry: current, onLookup: onLookup, wide: false)
-                        .padding(20)
-                } else if failed {
-                    ContentUnavailableView("查不到这个词", systemImage: "exclamationmark.magnifyingglass",
-                                           description: Text("请检查网络后重试"))
-                        .padding(.top, 80)
-                } else {
-                    ProgressView().padding(.top, 80)
+        NavigationStack(path: $path) {
+            WordPage(word: word, entry: entry, translate: translate) { path.append($0) }
+                .navigationDestination(for: String.self) { next in
+                    WordPage(word: next, translate: translate) { path.append($0) }
                 }
-            }
-            .background(Color.lxBackground)
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() } }
-            }
-            .task {
-                guard entry == nil, loaded == nil else { return }
-                loaded = try? await Youdao.lookup(word).entry
-                failed = loaded == nil
-            }
         }
+        .presentationDragIndicator(.visible)
         .tint(.lxAccent)
     }
 }
 
-/// 生词本：加了星标的词
-struct StarredWordsView: View {
-    /// 在当前会话里查这个词
+/// 一页词条。词典里没有时显示整句翻译。
+struct WordPage: View {
+    let word: String
+    var entry: WordEntry?
+    let translate: (String) async -> String?
     let onLookup: (String) -> Void
 
-    @Environment(\.dismiss) private var dismiss
-    @ObservedObject private var history = HistoryStore.shared
+    @State private var loaded: WordEntry?
+    @State private var translation: String?
+    @State private var finished = false
 
     var body: some View {
-        NavigationStack {
+        ScrollView {
+            if let current = entry ?? loaded {
+                WordView(entry: current, onLookup: onLookup, wide: false)
+                    .padding(.horizontal, 20)
+                    .padding(.top, 16)
+                    .padding(.bottom, 20)
+            } else if let translation {
+                VStack(alignment: .leading, spacing: 14) {
+                    Text(word).font(.system(size: 28, weight: .medium, design: .serif)).textSelection(.enabled)
+                    Text(translation).font(.system(size: 20, weight: .medium)).textSelection(.enabled)
+                    HStack(spacing: 8) {
+                        SpeakPill(speech: .text(word, isChinese: word.isMostlyChinese))
+                        GlassPillButton(title: "复制译文", systemName: "doc.on.doc") { Clipboard.copy(translation) }
+                    }
+                }
+                .padding(20)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            } else if finished {
+                ContentUnavailableView("查不到“\(word)”", systemImage: "exclamationmark.magnifyingglass",
+                                       description: Text("请检查网络后重试"))
+                    .padding(.top, 60)
+            } else {
+                ProgressView().padding(.top, 80)
+            }
+        }
+        .background(Color.lxBackground)
+        .navigationTitle(entry == nil ? word : "")
+        .navigationBarTitleDisplayMode(.inline)
+        .task {
+            guard entry == nil, loaded == nil, translation == nil else { return }
+            loaded = try? await Youdao.lookup(word).entry
+            if loaded == nil { translation = await translate(word) }
+            finished = true
+        }
+    }
+}
+
+/// 生词本：加了星标的词，点开在弹窗里看词条
+struct StarredWordsView: View {
+    let translate: (String) async -> String?
+
+    @ObservedObject private var history = HistoryStore.shared
+    @State private var path: [String] = []
+
+    var body: some View {
+        NavigationStack(path: $path) {
             List {
                 ForEach(history.starred) { item in
                     NavigationLink(value: item.text) {
@@ -70,14 +99,12 @@ struct StarredWordsView: View {
                 }
             }
             .navigationDestination(for: String.self) { word in
-                WordDetailView(word: word, onLookup: onLookup)
+                WordPage(word: word, translate: translate) { path.append($0) }
             }
             .navigationTitle("生词本")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() } }
-            }
         }
+        .presentationDragIndicator(.visible)
         .tint(.lxAccent)
     }
 }

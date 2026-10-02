@@ -42,7 +42,17 @@ final class ConversationStore: ObservableObject {
                 sessions[i].turns[j].state = .failed
                 sessions[i].turns[j].errorMessage = "翻译被中断了"
             }
-            for j in sessions[i].turns.indices { sessions[i].turns[j].isOptimizing = false }
+            for j in sessions[i].turns.indices {
+                sessions[i].turns[j].isOptimizing = false
+                // 旧版本把 AI 结果直接写进了 translation，这里拆回“机器翻译 + AI 结果”
+                if var s = sessions[i].turns[j].sentence, s.calibrated, s.aiTranslation == nil {
+                    s.aiTranslation = s.translation
+                    s.translation = s.machineTranslation ?? s.translation
+                    s.aiShown = true
+                    s.calibrated = false
+                    sessions[i].turns[j].sentence = s
+                }
+            }
         }
     }
 
@@ -94,6 +104,21 @@ final class ConversationStore: ObservableObject {
 
     func moveSession(_ id: UUID, to sceneID: UUID?) {
         updateSession(id) { $0.sceneID = sceneID }
+    }
+
+    /// 拖动会话：放到某个会话前面（就进入那个会话所在的场景），或放到某个场景的最上面
+    func moveSession(_ id: UUID, toScene sceneID: UUID?, before targetID: UUID?) {
+        guard id != targetID, let index = sessions.firstIndex(where: { $0.id == id }) else { return }
+        var session = sessions.remove(at: index)
+        session.sceneID = sceneID
+        if let targetID, let target = sessions.firstIndex(where: { $0.id == targetID }) {
+            sessions.insert(session, at: target)
+        } else if let first = sessions.firstIndex(where: { $0.sceneID == sceneID }) {
+            sessions.insert(session, at: first)
+        } else {
+            sessions.append(session)
+        }
+        save()
     }
 
     func deleteSession(_ id: UUID) {

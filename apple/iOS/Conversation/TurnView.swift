@@ -215,45 +215,69 @@ struct TurnView: View {
     private func sentenceResult(_ sentence: SentenceResult) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
-                if sentence.calibrated {
-                    Chip(text: sentence.machineTranslation == nil ? "AI 已优化 · 无需修改" : "AI 已优化", systemName: "sparkles", ai: true)
-                } else {
-                    Chip(text: sentence.engine, systemName: "checkmark")
+                Chip(text: sentence.engine, systemName: "checkmark")
+                // 点一下用 AI 优化，再点一下关掉；之前优化过的结果会保留，打开时不用重新请求
+                Button {
+                    AISettings.shared.isConfigured || sentence.aiTranslation != nil ? controller.toggleAI(turn.id) : onNeedAI()
+                } label: {
+                    Label("AI 优化", systemImage: sentence.showsAI ? "sparkles" : "sparkle")
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(sentence.showsAI ? Color.lxAI : Color.secondary)
+                        .padding(.horizontal, 10)
+                        .frame(height: 28)
+                        .background(sentence.showsAI ? Color.lxAISoft : Color.secondary.opacity(0.12), in: .capsule)
+                        .frame(minHeight: 44)
+                        .contentShape(.rect)
+                }
+                .buttonStyle(.plain)
+                .disabled(turn.isOptimizing)
+                .accessibilityLabel("AI 优化")
+                .accessibilityValue(sentence.showsAI ? "开" : "关")
+                if sentence.showsAI, !turn.isOptimizing {
+                    Button {
+                        AISettings.shared.isConfigured ? controller.reoptimize(turn.id) : onNeedAI()
+                    } label: {
+                        Image(systemName: "arrow.clockwise")
+                            .font(.footnote.weight(.semibold))
+                            .foregroundStyle(Color.lxAI)
+                            .frame(width: 36, height: 44)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("重新用 AI 优化")
                 }
                 if turn.isOptimizing {
                     ProgressView().controlSize(.small)
                     Text("AI 优化中…").font(.footnote).foregroundStyle(.secondary)
                 }
             }
-            Text(sentence.translation)
+            Text(sentence.displayed)
                 .font(.system(size: 19, weight: .medium))
                 .lineSpacing(4)
                 .textSelection(.enabled)
-            if let before = sentence.machineTranslation {
-                (Text("优化前　").fontWeight(.semibold) + Text(before))
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                    .textSelection(.enabled)
-            }
-            if let usage = sentence.aiUsage {
-                Text(usage.summary).font(.caption.weight(.semibold)).foregroundStyle(Color.lxAI)
+            if sentence.showsAI {
+                if sentence.aiTranslation != sentence.translation {
+                    (Text("优化前　").fontWeight(.semibold) + Text(sentence.translation))
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                } else {
+                    Text("AI 认为原译文无需修改").font(.footnote).foregroundStyle(.secondary)
+                }
+                Text([sentence.aiModel, sentence.aiUsage?.summary].compactMap { $0 }.joined(separator: " · "))
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(Color.lxAI)
             }
             if let error = turn.aiError {
                 Label(error, systemImage: "exclamationmark.triangle").font(.footnote).foregroundStyle(Color.lxAI)
             }
             HStack(spacing: 0) {
-                SpeakButton(speech: .text(sentence.translation, isChinese: !sentence.sourceIsChinese))
+                SpeakButton(speech: .text(sentence.displayed, isChinese: !sentence.sourceIsChinese))
                     .frame(width: 44, height: 44)
                 iconButton(copied ? "checkmark" : "doc.on.doc", "复制译文") {
-                    Clipboard.copy(sentence.translation)
+                    Clipboard.copy(sentence.displayed)
                     copied = true
                 }
                 iconButton("arrow.up.arrow.down", "对调：把译文反向再翻译一次") { controller.swap(turn) }
-                if !sentence.calibrated, !turn.isOptimizing {
-                    iconButton("sparkles", "AI 优化", tint: .lxAI) {
-                        AISettings.shared.isConfigured ? controller.optimize(turn.id) : onNeedAI()
-                    }
-                }
                 iconButton("arrowshape.turn.up.left", "AI 写回复", tint: .lxAI) {
                     AISettings.shared.isConfigured ? onReply(sentence) : onNeedAI()
                 }

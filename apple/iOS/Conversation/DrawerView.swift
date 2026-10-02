@@ -1,89 +1,106 @@
 import SwiftUI
 
 enum DrawerAction {
-    case newSession, newScene, editScene(UUID), editList, starred, settings
+    case newSession, editScene(UUID), newScene, starred, settings
 }
 
-/// 抽屉：搜索、新建会话、生词本、两层的场景和会话列表，最下面是用户和设置。
+/// 抽屉：搜索、生词本和编辑，两层的场景和会话列表，底部是设置和新建。
+/// 平时长按会话就能拖到别的位置或别的场景；点“编辑”出现拖动把手。
 struct DrawerView: View {
     @ObservedObject var controller: ConversationController
     @ObservedObject var store: ConversationStore
     let onSelect: () -> Void
     let onAction: (DrawerAction) -> Void
 
-    @AppStorage("profile.name") private var profileName = ""
     @AppStorage("drawer.collapsed") private var collapsedRaw = ""
     @State private var query = ""
+    @State private var editing = false
     @State private var renaming: ChatSession?
     @State private var renameText = ""
     @State private var deleting: ChatSession?
+    @State private var dropTarget: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 8) {
-                Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-                TextField("搜索会话和翻译", text: $query)
-                    .textFieldStyle(.plain)
-                    .submitLabel(.search)
+            if !editing {
+                HStack(spacing: 8) {
+                    Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+                    TextField("搜索会话和翻译", text: $query)
+                        .textFieldStyle(.plain)
+                        .submitLabel(.search)
+                }
+                .padding(.horizontal, 14)
+                .frame(height: 44)
+                .background(Color.lxSurface, in: .capsule)
             }
-            .padding(.horizontal, 14)
-            .frame(height: 44)
-            .background(Color.lxSurface, in: .capsule)
 
             HStack(spacing: 4) {
-                drawerButton("新建会话", "square.and.pencil", tint: .lxAccent) { onAction(.newSession) }
-                drawerButton("生词本", "star") { onAction(.starred) }
+                if !editing {
+                    Button { onAction(.starred) } label: {
+                        Label("生词本", systemImage: "star")
+                            .font(.callout.weight(.semibold))
+                            .padding(.horizontal, 10)
+                            .frame(minHeight: 44)
+                    }
+                    .buttonStyle(.plain)
+                } else {
+                    Text("拖动排序，或拖到别的场景下面").font(.footnote).foregroundStyle(.secondary).padding(.leading, 6)
+                }
                 Spacer()
-                Button("编辑") { onAction(.editList) }
-                    .font(.callout.weight(.semibold))
-                    .frame(minWidth: 44, minHeight: 44)
+                Button(editing ? "完成" : "编辑") {
+                    withAnimation(.snappy) { editing.toggle() }
+                }
+                .font(.callout.weight(.semibold))
+                .frame(minWidth: 44, minHeight: 44)
             }
 
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 2, pinnedViews: [.sectionHeaders]) {
-                    if query.trimmed.isEmpty {
-                        ForEach(store.scenes) { scene in
-                            sceneSection(scene)
+            if editing {
+                DrawerEditList(store: store, onEditScene: { onAction(.editScene($0)) }, onNewScene: { onAction(.newScene) })
+            } else {
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 2, pinnedViews: [.sectionHeaders]) {
+                        if query.trimmed.isEmpty {
+                            ForEach(store.scenes) { sceneSection($0) }
+                            if !store.sessions(in: nil).isEmpty || store.scenes.isEmpty {
+                                sceneSection(nil)
+                            }
+                        } else {
+                            searchResults
                         }
-                        let unsorted = store.sessions(in: nil)
-                        if !unsorted.isEmpty || store.scenes.isEmpty {
-                            sceneSection(nil)
-                        }
-                        drawerButton("新建场景", "plus", tint: .secondary) { onAction(.newScene) }
-                            .padding(.top, 6)
-                    } else {
-                        searchResults
                     }
                 }
+                .scrollIndicators(.hidden)
             }
-            .scrollIndicators(.hidden)
 
             Divider()
-            HStack(spacing: 10) {
-                Text(String(profileName.trimmed.first ?? "我"))
-                    .font(.headline)
-                    .foregroundStyle(Color.lxOnAccent)
-                    .frame(width: 36, height: 36)
-                    .background(Color.lxAccent, in: .circle)
-                    .accessibilityHidden(true)
-                Text(profileName.trimmed.isEmpty ? "我的设置" : profileName)
-                    .font(.callout.weight(.semibold))
-                    .lineLimit(1)
-                Spacer()
+            HStack {
                 Button { onAction(.settings) } label: {
-                    Image(systemName: "slider.horizontal.3").frame(width: 44, height: 44)
+                    Label("设置", systemImage: "gearshape")
+                        .font(.callout.weight(.semibold))
+                        .padding(.horizontal, 10)
+                        .frame(minHeight: 44)
+                        .contentShape(.rect)
                 }
-                .accessibilityLabel("设置")
+                .buttonStyle(.plain)
+                Spacer()
+                Button { onAction(.newSession) } label: {
+                    Label("新建", systemImage: "square.and.pencil")
+                        .font(.callout.weight(.semibold))
+                        .foregroundStyle(Color.lxOnAccent)
+                        .padding(.horizontal, 16)
+                        .frame(height: 40)
+                        .background(Color.lxAccent, in: .capsule)
+                        .frame(minHeight: 44)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("新建会话")
             }
-            .contentShape(.rect)
-            .onTapGesture { onAction(.settings) }
         }
         .padding(.horizontal, 12)
         .padding(.top, 8)
         .padding(.bottom, 4)
         .frame(maxHeight: .infinity, alignment: .top)
         .background(Color.lxBackground)
-        .foregroundStyle(.primary)
         .alert("重命名会话", isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })) {
             TextField("名称", text: $renameText)
             Button("取消", role: .cancel) {}
@@ -105,10 +122,9 @@ struct DrawerView: View {
         collapsedRaw.split(separator: ",").contains(Substring(key(scene)))
     }
 
-    private func toggle(_ scene: SceneGroup?) {
+    private func setCollapsed(_ scene: SceneGroup?, _ collapsed: Bool) {
         var set = Set(collapsedRaw.split(separator: ",").map(String.init))
-        let k = key(scene)
-        if set.contains(k) { set.remove(k) } else { set.insert(k) }
+        if collapsed { set.insert(key(scene)) } else { set.remove(key(scene)) }
         collapsedRaw = set.joined(separator: ",")
     }
 
@@ -119,38 +135,62 @@ struct DrawerView: View {
             if !collapsed {
                 ForEach(sessions) { sessionRow($0) }
                 if sessions.isEmpty {
-                    Text("还没有会话").font(.footnote).foregroundStyle(.secondary).padding(.leading, 62).padding(.vertical, 6)
+                    Text("还没有会话，点右边的 + 新建").font(.footnote).foregroundStyle(.secondary)
+                        .padding(.leading, 18).padding(.vertical, 8)
                 }
             }
         } header: {
-            // 往上滑时场景标题吸在顶部
-            Button { withAnimation(.snappy) { toggle(scene) } } label: {
+            sceneHeader(scene, count: sessions.count, collapsed: collapsed)
+        }
+    }
+
+    /// 场景标题：点左边展开或收起；右边是“在这个场景里新建会话”和“编辑场景”。往上滑时吸在顶部。
+    private func sceneHeader(_ scene: SceneGroup?, count: Int, collapsed: Bool) -> some View {
+        HStack(spacing: 4) {
+            Button {
+                withAnimation(.snappy) { setCollapsed(scene, !collapsed) }
+            } label: {
                 HStack(spacing: 10) {
                     SceneCoverView(cover: scene?.cover)
                     VStack(alignment: .leading, spacing: 1) {
-                        Text(scene?.name ?? "未分类").font(.callout.weight(.bold))
-                        Text("\(sessions.count) 个会话").font(.caption).foregroundStyle(.secondary)
+                        Text(scene?.name ?? "未分类").font(.callout.weight(.bold)).lineLimit(1)
+                        Text("\(count) 个会话").font(.caption).foregroundStyle(.secondary)
                     }
-                    Spacer()
                     Image(systemName: collapsed ? "chevron.right" : "chevron.down")
-                        .font(.footnote.weight(.semibold))
+                        .font(.caption.weight(.semibold))
                         .foregroundStyle(.secondary)
+                    Spacer(minLength: 0)
                 }
-                .padding(.vertical, 6)
-                .padding(.horizontal, 6)
                 .frame(minHeight: 56)
                 .contentShape(.rect)
             }
             .buttonStyle(.plain)
-            .background(Color.lxBackground)
             .accessibilityHint(collapsed ? "展开" : "收起")
-            .contextMenu {
-                if let scene {
-                    Button("编辑场景", systemImage: "pencil") { onAction(.editScene(scene.id)) }
-                    Button("删除场景", systemImage: "trash", role: .destructive) { store.deleteScene(scene.id) }
+
+            Button {
+                controller.newSession(sceneID: scene?.id)
+                onSelect()
+            } label: {
+                Image(systemName: "plus").frame(width: 40, height: 44)
+            }
+            .accessibilityLabel("在\(scene?.name ?? "未分类")里新建会话")
+
+            if let scene {
+                Button { onAction(.editScene(scene.id)) } label: {
+                    Image(systemName: "ellipsis").frame(width: 40, height: 44)
                 }
+                .accessibilityLabel("编辑场景\(scene.name)")
             }
         }
+        .padding(.horizontal, 6)
+        .background(dropTarget == "h-" + key(scene) ? Color.lxAccentSoft : Color.lxBackground, in: .rect(cornerRadius: 14))
+        // 把会话拖到场景标题上：移到这个场景的最上面
+        .dropDestination(for: String.self) { items, _ in
+            guard let id = items.first.flatMap(UUID.init) else { return false }
+            withAnimation(.snappy) { store.moveSession(id, toScene: scene?.id, before: nil) }
+            setCollapsed(scene, false)
+            return true
+        } isTargeted: { dropTarget = $0 ? "h-" + key(scene) : (dropTarget == "h-" + key(scene) ? nil : dropTarget) }
     }
 
     private func sessionRow(_ session: ChatSession, snippet: String? = nil) -> some View {
@@ -171,23 +211,41 @@ struct DrawerView: View {
             .padding(.leading, 18)
             .padding(.trailing, 10)
             .frame(minHeight: 50)
-            .background(session.id == controller.currentID ? Color.lxAccentSoft : Color.clear, in: .rect(cornerRadius: 14))
+            .background(rowBackground(session), in: .rect(cornerRadius: 14))
             .contentShape(.rect)
         }
         .buttonStyle(.plain)
+        // 长按拖动：放到另一个会话上就排在它前面，并进入它所在的场景
+        .draggable(session.id.uuidString) {
+            Text(session.title)
+                .font(.callout.weight(.semibold))
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+                .background(Color.lxAccentSoft, in: .capsule)
+        }
+        .dropDestination(for: String.self) { items, _ in
+            guard let id = items.first.flatMap(UUID.init), id != session.id else { return false }
+            withAnimation(.snappy) { store.moveSession(id, toScene: session.sceneID, before: session.id) }
+            return true
+        } isTargeted: { dropTarget = $0 ? "s-" + session.id.uuidString : (dropTarget == "s-" + session.id.uuidString ? nil : dropTarget) }
         .contextMenu {
             Button("重命名", systemImage: "pencil") {
                 renameText = session.title
                 renaming = session
             }
             Menu("移到场景", systemImage: "folder") {
-                Button("未分类") { store.moveSession(session.id, to: nil) }
+                Button("未分类") { store.moveSession(session.id, toScene: nil, before: nil) }
                 ForEach(store.scenes) { scene in
-                    Button(scene.name) { store.moveSession(session.id, to: scene.id) }
+                    Button(scene.name) { store.moveSession(session.id, toScene: scene.id, before: nil) }
                 }
             }
             Button("删除", systemImage: "trash", role: .destructive) { deleting = session }
         }
+    }
+
+    private func rowBackground(_ session: ChatSession) -> Color {
+        if dropTarget == "s-" + session.id.uuidString { return Color.lxAccentSoft.opacity(0.6) }
+        return session.id == controller.currentID ? Color.lxAccentSoft : Color.clear
     }
 
     @ViewBuilder
@@ -206,16 +264,112 @@ struct DrawerView: View {
             ForEach(matches, id: \.0.id) { session, snippet in sessionRow(session, snippet: snippet) }
         }
     }
+}
 
-    private func drawerButton(_ title: String, _ icon: String, tint: Color = .primary, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Label(title, systemImage: icon)
-                .font(.callout.weight(.semibold))
-                .foregroundStyle(tint)
-                .padding(.horizontal, 10)
-                .frame(minHeight: 44)
-                .contentShape(.rect)
+/// 抽屉的编辑状态：会话和场景都出现拖动把手。会话拖到哪个场景标题下面，就归到那个场景。
+struct DrawerEditList: View {
+    @ObservedObject var store: ConversationStore
+    let onEditScene: (UUID) -> Void
+    let onNewScene: () -> Void
+
+    @State private var tab = 0
+
+    private enum Row: Identifiable {
+        case header(SceneGroup?)
+        case session(ChatSession)
+
+        var id: String {
+            switch self {
+            case .header(let scene): "h-" + (scene?.id.uuidString ?? "none")
+            case .session(let session): "s-" + session.id.uuidString
+            }
         }
-        .buttonStyle(.plain)
+    }
+
+    /// 和抽屉里一样的顺序：各个场景，最后是未分类
+    private var rows: [Row] {
+        var result: [Row] = []
+        for scene in store.scenes {
+            result.append(.header(scene))
+            result += store.sessions(in: scene.id).map(Row.session)
+        }
+        result.append(.header(nil))
+        result += store.sessions(in: nil).map(Row.session)
+        return result
+    }
+
+    var body: some View {
+        VStack(spacing: 6) {
+            Picker("编辑", selection: $tab) {
+                Text("会话").tag(0)
+                Text("场景").tag(1)
+            }
+            .pickerStyle(.segmented)
+
+            List {
+                if tab == 0 {
+                    ForEach(rows) { row in
+                        switch row {
+                        case .header(let scene):
+                            HStack(spacing: 10) {
+                                SceneCoverView(cover: scene?.cover, size: 28)
+                                Text(scene?.name ?? "未分类").font(.callout.weight(.bold))
+                            }
+                            .moveDisabled(true)
+                            .deleteDisabled(true)
+                            .listRowBackground(Color.lxSurface)
+                        case .session(let session):
+                            Text(session.title).font(.callout).lineLimit(1).padding(.leading, 10)
+                        }
+                    }
+                    .onMove(perform: moveSessions)
+                    .onDelete(perform: deleteSessions)
+                } else {
+                    ForEach(store.scenes) { scene in
+                        HStack(spacing: 10) {
+                            SceneCoverView(cover: scene.cover, size: 30)
+                            Text(scene.name).font(.callout)
+                            Spacer()
+                            Button { onEditScene(scene.id) } label: {
+                                Image(systemName: "pencil").frame(width: 36, height: 36)
+                            }
+                            .buttonStyle(.borderless)
+                            .accessibilityLabel("编辑\(scene.name)的名称和图标")
+                        }
+                    }
+                    .onMove { store.moveScenes(from: $0, to: $1) }
+                    .onDelete { offsets in offsets.map { store.scenes[$0].id }.forEach(store.deleteScene) }
+
+                    Button { onNewScene() } label: {
+                        Label("新建场景", systemImage: "plus")
+                    }
+                }
+            }
+            .listStyle(.plain)
+            .environment(\.editMode, .constant(.active))
+        }
+    }
+
+    private func moveSessions(from source: IndexSet, to destination: Int) {
+        var list = rows
+        list.move(fromOffsets: source, toOffset: destination)
+        // 每个会话归到它上方最近的那个场景标题
+        var currentScene: UUID?
+        if case .header(let first)? = list.first { currentScene = first?.id }
+        var order: [(sessionID: UUID, sceneID: UUID?)] = []
+        for row in list {
+            switch row {
+            case .header(let scene): currentScene = scene?.id
+            case .session(let session): order.append((session.id, currentScene))
+            }
+        }
+        store.applyOrder(order)
+    }
+
+    private func deleteSessions(at offsets: IndexSet) {
+        let list = rows
+        for i in offsets {
+            if case .session(let session) = list[i] { store.deleteSession(session.id) }
+        }
     }
 }
