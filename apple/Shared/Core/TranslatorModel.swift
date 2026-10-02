@@ -1,4 +1,3 @@
-import AppKit
 import OSLog
 import SwiftUI
 import Translation
@@ -13,8 +12,14 @@ final class TranslatorModel: ObservableObject {
     /// 变化时触发视图上的 translationTask，由系统提供离线翻译会话
     @Published var config: TranslationSession.Configuration?
     @Published var canDownloadOffline = false
-    /// 当前文字的来源图片（粘贴或拖入），用于在结果上方显示缩略图
-    @Published var sourceImage: NSImage?
+    /// 当前文字的来源图片（拍照、相册、粘贴或拖入），用于在结果上方显示缩略图
+    @Published var sourceImage: PlatformImage?
+    @Published var isCalibrating = false
+    @Published var aiError: String?
+    /// 每次从历史、词组等处点选查询时加一，界面据此收起键盘
+    @Published private(set) var lookupCount = 0
+
+    let history = HistoryStore.shared
 
     private var task: Task<Void, Never>?
     private var requestID = 0
@@ -27,7 +32,7 @@ final class TranslatorModel: ObservableObject {
 
     func inputChanged() {
         // 中文输入法还在组字时不查询，避免把拼音当成英文去查
-        if (NSApp.keyWindow?.firstResponder as? NSTextView)?.hasMarkedText() == true { return }
+        if isComposingText { return }
         schedule(delayMilliseconds: 450)
     }
 
@@ -37,13 +42,14 @@ final class TranslatorModel: ObservableObject {
     }
 
     func lookup(_ word: String) {
+        lookupCount += 1
         sourceImage = nil
         input = word
         submit()
     }
 
-    /// 粘贴或拖入图片：先在本机识别文字，再按普通文本走翻译流程
-    func translateImage(_ image: NSImage) {
+    /// 图片翻译：先在本机识别文字，再按普通文本走翻译流程
+    func translateImage(_ image: PlatformImage) {
         task?.cancel()
         requestID += 1
         let id = requestID
@@ -62,12 +68,22 @@ final class TranslatorModel: ObservableObject {
         }
     }
 
+    private var isComposingText: Bool {
+        #if os(macOS)
+        (NSApp.keyWindow?.firstResponder as? NSTextView)?.hasMarkedText() == true
+        #else
+        // iOS 的拼音输入在组字时用 U+2006 分隔音节
+        input.contains("\u{2006}")
+        #endif
+    }
+
     private func schedule(delayMilliseconds: Int) {
         let text = input.trimmed
         if !text.isEmpty, text == lastQuery { return }
         task?.cancel()
         lastQuery = ""
         requestID += 1
+        aiError = nil
         guard !text.isEmpty else {
             phase = .idle
             sourceImage = nil
@@ -97,6 +113,10 @@ final class TranslatorModel: ObservableObject {
             guard id == requestID else { return }
             if let entry = response.entry {
                 phase = .word(entry)
+                history.add(entry.word, summary: entry.summary)
+                if UserDefaults.standard.bool(forKey: SettingsKey.autoSpeak) {
+                    Speaker.shared.speak(entry.word, isChinese: entry.isChinese)
+                }
                 return
             }
             suggestions = response.suggestions
@@ -124,12 +144,19 @@ final class TranslatorModel: ObservableObject {
         do {
             let result = try await OnlineTranslator.translate(text, fromChinese: chinese)
             guard id == requestID else { return }
-            phase = .sentence(SentenceResult(source: text, translation: result, sourceIsChinese: chinese,
-                                             engine: OnlineTranslator.name, suggestions: suggestions))
+            finish(SentenceResult(source: text, translation: result, sourceIsChinese: chinese,
+                                  engine: OnlineTranslator.name, suggestions: suggestions))
         } catch {
             guard id == requestID, !Task.isCancelled else { return }
             phase = .failed("翻译失败，请检查网络后重试。")
         }
+    }
+
+    private func finish(_ result: SentenceResult) {
+        phase = .sentence(result)
+        history.add(result.source, summary: result.translation)
+        let ai = AISettings.shared
+        if ai.autoCalibrate, ai.isConfigured { calibrate() }
     }
 
     // MARK: 系统离线翻译
@@ -161,9 +188,8 @@ final class TranslatorModel: ObservableObject {
             }
             guard id == requestID else { return }
             log.info("offline translation: \(text.count, privacy: .public) characters")
-            phase = .sentence(SentenceResult(source: text, translation: lines.joined(separator: "\n"),
-                                             sourceIsChinese: chinese, engine: "Apple 本地翻译",
-                                             suggestions: suggestions))
+            finish(SentenceResult(source: text, translation: lines.joined(separator: "\n"),
+                                  sourceIsChinese: chinese, engine: "系统离线翻译", suggestions: suggestions))
         } catch {
             guard id == requestID else { return }
             await translateOnline(text, chinese: chinese, suggestions: suggestions, id: id)
@@ -194,5 +220,35 @@ final class TranslatorModel: ObservableObject {
         if text.contains(where: { "\n,.!?;，。！？；".contains($0) }) { return false }
         if chinese { return text.count <= 8 }
         return text.count <= 40 && text.split(separator: " ").count <= 4
+    }
+
+    // MARK: AI 校准
+
+    /// 用 AI 检查并修正当前这条机器翻译
+    func calibrate() {
+        guard case .sentence(let result) = phase, !result.calibrated, !isCalibrating else { return }
+        let id = requestID
+        let config = AIClient.currentConfig
+        isCalibrating = true
+        aiError = nil
+        Task {
+            defer { isCalibrating = false }
+            do {
+                let improved = try await AITasks.calibrate(source: result.source, machine: result.translation,
+                                                           sourceIsChinese: result.sourceIsChinese, config: config)
+                guard id == requestID, case .sentence(var current) = phase else { return }
+                if improved != current.translation {
+                    current.machineTranslation = current.translation
+                    current.translation = improved
+                }
+                current.calibrated = true
+                phase = .sentence(current)
+                history.add(current.source, summary: current.translation)
+                log.info("ai calibration: \(improved.count, privacy: .public) characters")
+            } catch {
+                guard id == requestID else { return }
+                aiError = error.localizedDescription
+            }
+        }
     }
 }

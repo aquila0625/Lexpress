@@ -8,12 +8,14 @@ if CommandLine.arguments.count > 2, CommandLine.arguments[1] == "--lookup" {
         let chinese = query.containsChinese
         if let entry = try? await Youdao.lookup(query).entry {
             print("【词典】\(entry.word)  \(entry.phonetics.map { "\($0.label)/\($0.ipa)/" }.joined(separator: " "))\(entry.pinyin ?? "")")
-            entry.definitions.forEach { print("  释义: \($0.text) \($0.note ?? "")") }
+            entry.definitions.forEach { print("  汇总: \($0.text) \($0.note ?? "")") }
+            entry.senses.forEach { print("  义项: [\($0.pos ?? "")]\($0.isCommon ? "[常用]" : "") \($0.meaning) (例句 \($0.examples.count))") }
             print("  词形: \(entry.forms.joined(separator: " · "))")
-            entry.collins.forEach { print("  柯林斯: [\($0.pos ?? "")] \($0.explanation.strippingTags) (例句 \($0.examples.count))") }
             entry.examples.forEach { print("  例句: \($0.source.strippingTags)\n        \($0.translation)") }
-            entry.phrases.forEach { print("  词组: \($0.key) = \($0.value)") }
+            entry.phrases.forEach { print("  搭配: \($0.key) = \($0.value)") }
             entry.related.forEach { print("  同根: \($0.pos) \($0.word) \($0.meaning)") }
+            entry.distinctions.forEach { print("  辨析: \($0.title) (\($0.usages.count) 个词)") }
+            print("  柯林斯 \(entry.collins.count) 条；词源 \(entry.etymology == nil ? "无" : "有")")
         } else {
             print("【词典】无词条")
         }

@@ -9,8 +9,15 @@ final class Speaker: NSObject {
     private var player: AVPlayer?
     private var failureObserver: NSObjectProtocol?
 
-    /// accent：1 英音，2 美音
-    func english(_ text: String, accent: Int = 2) {
+    /// 设置里选的默认口音：1 英音，2 美音
+    static var defaultAccent: Int {
+        let value = UserDefaults.standard.integer(forKey: SettingsKey.accent)
+        return value == 1 ? 1 : 2
+    }
+
+    /// accent：1 英音，2 美音；不传时用设置里的默认口音
+    func english(_ text: String, accent: Int? = nil) {
+        let accent = accent ?? Speaker.defaultAccent
         stop()
         guard text.count <= 300 else { return synthesize(text, language: accent == 1 ? "en-GB" : "en-US") }
         var comps = URLComponents(string: "https://dict.youdao.com/dictvoice")!
@@ -41,10 +48,19 @@ final class Speaker: NSObject {
     }
 
     private func stop() {
+        #if os(iOS)
+        // 静音开关打开时也能朗读
+        try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .spokenAudio)
+        #endif
         player?.pause()
         player = nil
         if let failureObserver { NotificationCenter.default.removeObserver(failureObserver) }
         failureObserver = nil
         synthesizer.stopSpeaking(at: .immediate)
     }
+}
+
+enum SettingsKey {
+    static let accent = "speech.accent"
+    static let autoSpeak = "speech.autoSpeak"
 }

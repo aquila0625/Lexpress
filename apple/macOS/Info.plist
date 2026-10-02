@@ -7,27 +7,25 @@
     <key>CFBundleDisplayName</key>
     <string>Lexpress</string>
     <key>CFBundleExecutable</key>
-    <string>Lexpress</string>
+    <string>$(EXECUTABLE_NAME)</string>
     <key>CFBundleIdentifier</key>
-    <string>com.yishulabs.lexpress</string>
+    <string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
     <key>CFBundleInfoDictionaryVersion</key>
     <string>6.0</string>
     <key>CFBundleName</key>
-    <string>Lexpress</string>
+    <string>$(PRODUCT_NAME)</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
-    <string>1.0</string>
+    <string>$(MARKETING_VERSION)</string>
     <key>CFBundleVersion</key>
-    <string>1</string>
+    <string>$(CURRENT_PROJECT_VERSION)</string>
     <key>LSApplicationCategoryType</key>
     <string>public.app-category.reference</string>
     <key>LSMinimumSystemVersion</key>
-    <string>15.0</string>
+    <string>$(MACOSX_DEPLOYMENT_TARGET)</string>
     <key>NSHighResolutionCapable</key>
     <true/>
-    <key>CFBundleIconFile</key>
-    <string>AppIcon</string>
     <key>NSPrincipalClass</key>
     <string>NSApplication</string>
     <key>NSServices</key>

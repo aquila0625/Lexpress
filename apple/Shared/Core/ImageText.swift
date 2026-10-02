@@ -1,10 +1,9 @@
-import AppKit
 import Vision
 
 /// 图片文字识别：用系统自带的 Vision，在本机完成，不上传图片。
 enum ImageText {
-    static func recognize(_ image: NSImage) async throws -> String {
-        guard let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return "" }
+    static func recognize(_ image: PlatformImage) async throws -> String {
+        guard let input = image.visionInput else { return "" }
         return try await Task.detached(priority: .userInitiated) {
             let request = VNRecognizeTextRequest()
             request.recognitionLevel = .accurate
@@ -12,7 +11,7 @@ enum ImageText {
             // 不开自动检测时，纯英文图片会按中文模型识别，容易认错字母
             request.automaticallyDetectsLanguage = true
             request.usesLanguageCorrection = true
-            try VNImageRequestHandler(cgImage: cgImage).perform([request])
+            try VNImageRequestHandler(cgImage: input.image, orientation: input.orientation).perform([request])
             return paragraphs(from: request.results ?? [])
         }.value
     }

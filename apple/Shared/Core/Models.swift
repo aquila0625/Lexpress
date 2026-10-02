@@ -7,6 +7,7 @@ struct Phonetic: Identifiable {
     let accent: Int        // 有道发音参数：1 英音，2 美音
 }
 
+/// 按词性汇总的一行释义，例如 “v. 充电；控告；收费”
 struct Definition: Identifiable {
     let id = UUID()
     let text: String
@@ -18,6 +19,16 @@ struct ExamplePair: Identifiable {
     let source: String        // 可能带 <b> 高亮
     let translation: String
     let english: String       // 用于朗读的英文原句
+}
+
+/// 单个义项：一个意思配它自己的词性和例句
+struct Sense: Identifiable {
+    let id = UUID()
+    let pos: String?
+    let meaning: String
+    /// 词典把这个义项标为考试常见义，用来把常用义排在前面
+    let isCommon: Bool
+    let examples: [ExamplePair]
 }
 
 struct CollinsSense: Identifiable {
@@ -40,6 +51,13 @@ struct RelatedWord: Identifiable {
     let meaning: String
 }
 
+/// 近义词辨析：一组容易混淆的词和各自的用法
+struct Distinction: Identifiable {
+    let id = UUID()
+    let title: String
+    let usages: [Phrase]
+}
+
 struct Suggestion: Identifiable {
     let id = UUID()
     let word: String
@@ -53,24 +71,35 @@ struct WordEntry {
     var pinyin: String?
     var tags: [String] = []
     var definitions: [Definition] = []
+    var senses: [Sense] = []
     var forms: [String] = []
     var collins: [CollinsSense] = []
     var examples: [ExamplePair] = []
     var webMeanings: [String] = []
     var phrases: [Phrase] = []
     var related: [RelatedWord] = []
+    var distinctions: [Distinction] = []
+    var etymology: String?
 
     var hasContent: Bool {
-        !definitions.isEmpty || !collins.isEmpty || !webMeanings.isEmpty
+        !definitions.isEmpty || !senses.isEmpty || !collins.isEmpty || !webMeanings.isEmpty
+    }
+
+    /// 历史记录里显示的一行摘要
+    var summary: String {
+        definitions.first?.text ?? senses.first?.meaning ?? webMeanings.first ?? ""
     }
 }
 
 struct SentenceResult {
     let source: String
-    let translation: String
+    var translation: String
     let sourceIsChinese: Bool
-    let engine: String
+    var engine: String
     var suggestions: [Suggestion] = []
+    /// AI 校准后为 true；校准前的机器翻译保存在 machineTranslation（没有改动时为 nil）
+    var calibrated = false
+    var machineTranslation: String?
 }
 
 enum Phase {

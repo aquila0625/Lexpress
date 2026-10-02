@@ -13,23 +13,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.mainMenu = makeMenu()
 
-        window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 520, height: 640),
-                          styleMask: [.titled, .closable, .miniaturizable, .resizable],
+        window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1100, height: 720),
+                          styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
                           backing: .buffered, defer: false)
-        window.title = "快译"
+        window.title = "Lexpress 快译"
+        window.titlebarAppearsTransparent = true
+        window.titleVisibility = .hidden
         window.isReleasedWhenClosed = false   // 关窗只是隐藏，再次呼出不用重建
-        window.contentView = NSHostingView(rootView: ContentView(model: model))
+        window.minSize = NSSize(width: 420, height: 420)
+        window.contentView = NSHostingView(rootView: RootView(model: model))
         window.center()
-        window.setFrameAutosaveName("LexpressMainWindow")
+        window.setFrameAutosaveName("LexpressMainWindow.v3")
 
         // ⌥D 全局呼出 / 隐藏
         hotKey = HotKey(keyCode: kVK_ANSI_D, modifiers: optionKey) { [weak self] in
             Task { @MainActor in self?.toggle() }
         }
 
-        // Esc 隐藏；输入法正在组字时把 Esc 留给输入法
+        // Esc 隐藏；输入法正在组字时把 Esc 留给输入法，弹出的面板里的 Esc 也不拦
         escapeMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            guard event.keyCode == UInt16(kVK_Escape), let self, event.window === self.window else { return event }
+            guard event.keyCode == UInt16(kVK_Escape), let self, event.window === self.window,
+                  self.window.attachedSheet == nil else { return event }
             if (self.window.firstResponder as? NSTextView)?.hasMarkedText() == true { return event }
             NSApp.hide(nil)
             return nil
@@ -40,7 +44,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         show()
 
-        // 支持带参数启动直接查询：open -a 快译 --args hello
+        // 支持带参数启动直接查询：open -a Lexpress --args hello，或传一张图片的路径
         let query = CommandLine.arguments.dropFirst().filter { !$0.hasPrefix("-") }.joined(separator: " ")
         if let image = NSImage(contentsOfFile: query) {
             model.translateImage(image)
@@ -67,7 +71,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// ⌘V：剪贴板里是图片就识别并翻译，否则按普通文字粘贴
     @objc func smartPaste(_ sender: Any?) {
-        if let image = Self.image(from: .general) {
+        // 设置、写回复等面板打开时，只做普通粘贴
+        if window.attachedSheet == nil, let image = Self.image(from: .general) {
             model.translateImage(image)
         } else {
             NSApp.sendAction(#selector(NSText.paste(_:)), to: nil, from: sender)
@@ -109,10 +114,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let main = NSMenu()
 
         let app = NSMenu()
-        app.addItem(withTitle: "隐藏快译", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
+        app.addItem(withTitle: "隐藏 Lexpress", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
         app.addItem(.separator())
-        app.addItem(withTitle: "退出快译", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
-        main.addItem(submenu(app, title: "快译"))
+        app.addItem(withTitle: "退出 Lexpress", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        main.addItem(submenu(app, title: "Lexpress"))
 
         let edit = NSMenu(title: "编辑")
         edit.addItem(withTitle: "撤销", action: Selector(("undo:")), keyEquivalent: "z")

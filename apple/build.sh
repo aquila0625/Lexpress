@@ -1,19 +1,22 @@
 #!/bin/bash
-# 构建 Lexpress.app。用法：./build.sh          只构建到 build/
-#                     ./build.sh install  构建并安装到 /Applications
+# 构建 macOS 版 Lexpress.app。用法：./build.sh          只构建到 build/
+#                                  ./build.sh install  构建并安装到 /Applications
+# 需要 Xcode 和 XcodeGen（brew install xcodegen）。
 set -euo pipefail
 cd "$(dirname "$0")"
 
-swift build -c release
-BIN="$(swift build -c release --show-bin-path)/Lexpress"
-
-APP="build/Lexpress.app"
-rm -rf "$APP"
-mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-cp "$BIN" "$APP/Contents/MacOS/Lexpress"
-cp Resources/Info.plist "$APP/Contents/Info.plist"
-cp Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
-codesign --force --sign - "$APP"
+xcodegen generate --quiet
+# -quiet 模式下 xcodebuild 会多打两行无害的 “exit code 0” 提示，过滤掉
+set +e
+xcodebuild -project Lexpress.xcodeproj -scheme Lexpress-macOS -configuration Release \
+    -derivedDataPath build/DerivedData -quiet build 2>&1 | grep -v "produced no further output"
+status=${PIPESTATUS[0]}
+set -e
+if [[ $status -ne 0 ]]; then
+    echo "构建失败"
+    exit "$status"
+fi
+APP="build/DerivedData/Build/Products/Release/Lexpress.app"
 echo "已生成 $APP"
 
 if [[ "${1:-}" == "install" ]]; then
