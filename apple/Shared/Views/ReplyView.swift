@@ -113,9 +113,7 @@ struct ReplyView: View {
                 Clipboard.copy(reply.text)
                 copied = true
             }
-            GlassPillButton(title: "朗读", systemName: "speaker.wave.2") {
-                Speaker.shared.speak(reply.text, isChinese: reply.text.containsChinese)
-            }
+            SpeakPill(speech: .text(reply.text, isChinese: reply.text.isMostlyChinese))
         }
 
         VStack(alignment: .leading, spacing: 8) {

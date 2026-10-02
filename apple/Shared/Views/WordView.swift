@@ -48,7 +48,7 @@ struct WordView: View {
                                 }
                             }
                             Spacer(minLength: 8)
-                            SpeakButton { Speaker.shared.english(d.text) }
+                            SpeakButton(speech: .english(d.text))
                         }
                         .padding(.vertical, 6)
                         .overlay(alignment: .bottom) { Divider() }
@@ -129,14 +129,12 @@ struct WordView: View {
     @ViewBuilder
     private var pronunciations: some View {
         if entry.isChinese {
-            PronunciationPill(label: "中", text: entry.pinyin ?? "朗读") { Speaker.shared.chinese(entry.word) }
+            PronunciationPill(label: "中", text: entry.pinyin ?? "朗读", speech: .chinese(entry.word))
         } else if entry.phonetics.isEmpty {
-            PronunciationPill(label: "美", text: "朗读") { Speaker.shared.english(entry.word, accent: 2) }
+            PronunciationPill(label: "美", text: "朗读", speech: .english(entry.word, accent: 2))
         } else {
             ForEach(entry.phonetics) { p in
-                PronunciationPill(label: p.label, text: "/\(p.ipa)/") {
-                    Speaker.shared.english(entry.word, accent: p.accent)
-                }
+                PronunciationPill(label: p.label, text: "/\(p.ipa)/", speech: .english(entry.word, accent: p.accent))
             }
         }
     }
@@ -230,10 +228,14 @@ struct WordView: View {
 private struct PronunciationPill: View {
     let label: String
     let text: String
-    let action: () -> Void
+    let speech: Speech
+    @ObservedObject private var speaker = Speaker.shared
 
     var body: some View {
-        Button(action: action) {
+        let playing = speaker.playing == speech
+        Button {
+            speaker.toggle(speech)
+        } label: {
             HStack(spacing: 8) {
                 Text(label)
                     .font(.caption.weight(.bold))
@@ -242,7 +244,9 @@ private struct PronunciationPill: View {
                     .padding(.vertical, 2)
                     .background(Color.lxAccent, in: .rect(cornerRadius: 7))
                 Text(text).font(.callout).fixedSize()
-                Image(systemName: "speaker.wave.2.fill").font(.footnote).foregroundStyle(Color.lxAccent)
+                Image(systemName: playing ? "stop.fill" : "speaker.wave.2.fill")
+                    .font(.footnote)
+                    .foregroundStyle(Color.lxAccent)
             }
             .padding(.leading, 10)
             .padding(.trailing, 14)

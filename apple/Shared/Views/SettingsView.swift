@@ -27,14 +27,18 @@ struct SettingsView: View {
                             .autocorrectionDisabled()
                     }
                     if !ai.provider.suggestedModels.isEmpty {
-                        Picker("常用模型", selection: $ai.model) {
-                            ForEach(ai.provider.suggestedModels, id: \.self) { Text($0).tag($0) }
+                        Picker("模型", selection: $ai.model) {
+                            ForEach(ai.provider.modelGroups, id: \.title) { group in
+                                Section(group.title) {
+                                    ForEach(group.models, id: \.self) { Text($0).tag($0) }
+                                }
+                            }
                             if !ai.provider.suggestedModels.contains(ai.model) {
                                 Text(ai.model.isEmpty ? "未选择" : ai.model).tag(ai.model)
                             }
                         }
                     }
-                    TextField("模型名称", text: $ai.model)
+                    TextField("或手动填写模型名称", text: $ai.model)
                         .autocorrectionDisabled()
                     Toggle("翻译句子后自动校准", isOn: $ai.autoCalibrate)
                     Button {

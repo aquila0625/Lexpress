@@ -117,6 +117,25 @@ extension String {
         unicodeScalars.contains { (0x4E00...0x9FFF).contains($0.value) || (0x3400...0x4DBF).contains($0.value) }
     }
 
+    /// 中英混排时，哪种语言占比大就以哪种为原文。一个英文单词大约相当于两个汉字的信息量，
+    /// 所以按“汉字数”对“英文单词数 × 2”来比。
+    var isMostlyChinese: Bool {
+        var chinese = 0, englishWords = 0, inWord = false
+        for scalar in unicodeScalars {
+            if (0x4E00...0x9FFF).contains(scalar.value) || (0x3400...0x4DBF).contains(scalar.value) {
+                chinese += 1
+                inWord = false
+            } else if scalar.isASCII, scalar.properties.isAlphabetic {
+                if !inWord { englishWords += 1 }
+                inWord = true
+            } else if scalar != "'" && scalar != "-" {
+                inWord = false
+            }
+        }
+        if chinese == 0 { return false }
+        return chinese >= englishWords * 2
+    }
+
     var strippingTags: String {
         replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)
     }

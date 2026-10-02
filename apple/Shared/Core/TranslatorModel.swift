@@ -5,9 +5,17 @@ import Translation
 /// 只记录字符数，不记录用户输入的内容
 let log = Logger(subsystem: "com.yishulabs.lexpress", category: "app")
 
+/// 翻译方向：默认按输入内容自动识别，点方向按钮后变成手动指定
+enum Direction {
+    case auto, englishToChinese, chineseToEnglish
+}
+
 @MainActor
 final class TranslatorModel: ObservableObject {
     @Published var input = ""
+    @Published var direction: Direction = .auto
+    /// “对调”之后，最初输入的那段原文保留在这里，可以随时恢复
+    @Published var preservedOriginal: String?
     @Published var phase: Phase = .idle
     /// 变化时触发视图上的 translationTask，由系统提供离线翻译会话
     @Published var config: TranslationSession.Configuration?
@@ -26,6 +34,7 @@ final class TranslatorModel: ObservableObject {
     private var lastQuery = ""
     private var pendingText: String?
     private var pendingSuggestions: [Suggestion] = []
+    private var pendingChinese = false
     private var wantsDownload = false
 
     // MARK: 输入
@@ -41,9 +50,45 @@ final class TranslatorModel: ObservableObject {
         schedule(delayMilliseconds: 0)
     }
 
+    // MARK: 方向
+
+    /// 这段文字按当前方向算不算中文原文
+    func sourceIsChinese(_ text: String) -> Bool {
+        switch direction {
+        case .auto: text.isMostlyChinese
+        case .englishToChinese: false
+        case .chineseToEnglish: true
+        }
+    }
+
+    /// 点方向按钮：英译中、中译英来回切换，并按新方向重新翻译
+    func toggleDirection() {
+        direction = sourceIsChinese(input) ? .englishToChinese : .chineseToEnglish
+        if !input.trimmed.isEmpty { submit() }
+    }
+
+    /// 把译文放到上面当原文，再反向翻译一次；最初的原文保留着
+    func swapWithTranslation() {
+        guard case .sentence(let result) = phase else { return }
+        if preservedOriginal == nil { preservedOriginal = result.source }
+        direction = .auto
+        input = result.translation
+        submit()
+    }
+
+    func restoreOriginal() {
+        guard let original = preservedOriginal else { return }
+        preservedOriginal = nil
+        direction = .auto
+        input = original
+        submit()
+    }
+
     func lookup(_ word: String) {
         lookupCount += 1
         sourceImage = nil
+        preservedOriginal = nil
+        direction = .auto
         input = word
         submit()
     }
@@ -87,6 +132,8 @@ final class TranslatorModel: ObservableObject {
         guard !text.isEmpty else {
             phase = .idle
             sourceImage = nil
+            preservedOriginal = nil
+            direction = .auto
             return
         }
         if delayMilliseconds == 0 { lastQuery = text }
@@ -106,16 +153,16 @@ final class TranslatorModel: ObservableObject {
         requestID += 1
         let id = requestID
         phase = .loading
-        let chinese = text.containsChinese
+        let chinese = sourceIsChinese(text)
         var suggestions: [Suggestion] = []
 
-        if isWordLike(text, chinese: chinese), let response = try? await Youdao.lookup(text) {
+        if isWordLike(text, chinese: text.containsChinese), let response = try? await Youdao.lookup(text) {
             guard id == requestID else { return }
             if let entry = response.entry {
                 phase = .word(entry)
                 history.add(entry.word, summary: entry.summary)
                 if UserDefaults.standard.bool(forKey: SettingsKey.autoSpeak) {
-                    Speaker.shared.speak(entry.word, isChinese: entry.isChinese)
+                    Speaker.shared.play(.text(entry.word, isChinese: entry.isChinese))
                 }
                 return
             }
@@ -133,6 +180,7 @@ final class TranslatorModel: ObservableObject {
         if status == .installed {
             pendingText = text
             pendingSuggestions = suggestions
+            pendingChinese = chinese
             trigger(source: source, target: target)
             return
         }
@@ -175,7 +223,7 @@ final class TranslatorModel: ObservableObject {
         pendingText = nil
         let suggestions = pendingSuggestions
         let id = requestID
-        let chinese = text.containsChinese
+        let chinese = pendingChinese
 
         do {
             // 按行翻译以保留原文的段落结构
@@ -198,7 +246,7 @@ final class TranslatorModel: ObservableObject {
 
     func downloadOfflineModel() {
         wantsDownload = true
-        let (source, target) = languages(chinese: input.containsChinese)
+        let (source, target) = languages(chinese: sourceIsChinese(input))
         trigger(source: source, target: target)
     }
 

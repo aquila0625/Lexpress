@@ -2,7 +2,7 @@ import SwiftUI
 import Translation
 import UniformTypeIdentifiers
 
-/// 整个界面。窄屏（iPhone、窄窗口）单栏；宽屏（iPad、Mac 窗口）左侧多一栏历史。
+/// 整个界面：上面是输入区，下面是结果。宽屏（iPad、Mac 窗口）左侧多一栏历史。
 struct RootView: View {
     @ObservedObject var model: TranslatorModel
 
@@ -16,13 +16,16 @@ struct RootView: View {
 
     var body: some View {
         GeometryReader { geometry in
+            // 键盘弹出时可用高度会变小，这里要的是整个屏幕（窗口）的高度
+            let fullHeight = geometry.size.height + geometry.safeAreaInsets.top + geometry.safeAreaInsets.bottom
+            let maxLines = inputMaxLines(fullHeight: fullHeight)
             ZStack {
                 WashBackground()
                 if geometry.size.width >= wideThreshold {
                     // 侧栏之外还够宽时，结果再分成左右两栏
-                    wideLayout(twoColumns: geometry.size.width >= twoColumnThreshold)
+                    wideLayout(twoColumns: geometry.size.width >= twoColumnThreshold, maxLines: maxLines)
                 } else {
-                    compactLayout
+                    compactLayout(maxLines: maxLines)
                 }
             }
         }
@@ -63,47 +66,39 @@ struct RootView: View {
         }
     }
 
+    /// 整个输入区（文字加下面一行按钮）最多占屏幕高度的 30%，超过的内容在输入框里滚动
+    private func inputMaxLines(fullHeight: CGFloat) -> Int {
+        let lineHeight: CGFloat = 23, chrome: CGFloat = 66
+        return min(12, max(4, Int((fullHeight * 0.3 - chrome) / lineHeight)))
+    }
+
     // MARK: 窄屏
 
-    @ViewBuilder
-    private var compactLayout: some View {
-        #if os(iOS)
-        // 手机：内容在上，输入栏悬浮在底部拇指区
-        resultScroll(wide: false, showsRecent: true)
-            .scrollDismissesKeyboard(.interactively)
-            .safeAreaInset(edge: .top) {
-                HStack {
-                    GlassIconButton(systemName: "clock", label: "历史与生词本") { showHistory = true }
-                    Spacer()
-                    DirectionPill(sourceIsChinese: model.input.containsChinese)
-                    Spacer()
-                    GlassIconButton(systemName: "slider.horizontal.3", label: "设置") { showSettings = true }
-                }
-                .padding(.horizontal, 16)
-                .padding(.bottom, 6)
-            }
-            .safeAreaInset(edge: .bottom) {
-                InputBar(model: model, focused: $focused)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-            }
-        #else
-        // Mac 的窄窗口：输入栏在上
-        VStack(spacing: 0) {
-            HStack(spacing: 8) {
-                InputBar(model: model, focused: $focused)
+    private func compactLayout(maxLines: Int) -> some View {
+        VStack(spacing: 10) {
+            HStack {
                 GlassIconButton(systemName: "clock", label: "历史与生词本") { showHistory = true }
+                Spacer()
+                DirectionPill(model: model)
+                Spacer()
                 GlassIconButton(systemName: "slider.horizontal.3", label: "设置") { showSettings = true }
             }
-            .padding(12)
+            .padding(.horizontal, 16)
+
+            InputBar(model: model, focused: $focused, maxLines: maxLines)
+                .padding(.horizontal, 12)
+
             resultScroll(wide: false, showsRecent: true)
+                #if os(iOS)
+                .scrollDismissesKeyboard(.interactively)
+                #endif
         }
-        #endif
+        .padding(.top, 6)
     }
 
     // MARK: 宽屏
 
-    private func wideLayout(twoColumns: Bool) -> some View {
+    private func wideLayout(twoColumns: Bool, maxLines: Int) -> some View {
         HStack(spacing: 0) {
             HistoryView(model: model, asSheet: false)
                 .frame(width: 280)
@@ -112,9 +107,9 @@ struct RootView: View {
                 .padding(.vertical, 14)
 
             VStack(spacing: 0) {
-                HStack(spacing: 10) {
-                    InputBar(model: model, focused: $focused)
-                    DirectionPill(sourceIsChinese: model.input.containsChinese)
+                HStack(alignment: .top, spacing: 10) {
+                    InputBar(model: model, focused: $focused, maxLines: maxLines)
+                    DirectionPill(model: model)
                     GlassIconButton(systemName: "slider.horizontal.3", label: "设置") { showSettings = true }
                 }
                 .padding(.horizontal, 24)
@@ -131,14 +126,14 @@ struct RootView: View {
                           onNeedAI: { showSettings = true },
                           onReply: { showReply = true })
                 .padding(.horizontal, wide ? 24 : 20)
-                .padding(.top, 10)
+                .padding(.top, 6)
                 .padding(.bottom, 28)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 }
 
-/// 输入栏下面的内容区：首页、加载中、词典结果、翻译结果
+/// 输入区下面的内容：首页、加载中、词典结果、翻译结果
 struct ResultContent: View {
     @ObservedObject var model: TranslatorModel
     let wide: Bool
@@ -166,15 +161,39 @@ struct ResultContent: View {
             case .idle:
                 home
             case .loading:
-                ProgressView().frame(maxWidth: .infinity).padding(.top, 60)
+                ProgressView().frame(maxWidth: .infinity).padding(.top, 40)
             case .failed(let message):
                 Label(message, systemImage: "exclamationmark.triangle").foregroundStyle(.secondary)
             case .word(let entry):
                 WordView(entry: entry, model: model, wide: wide)
             case .sentence(let result):
-                SentenceView(result: result, model: model, wide: wide, onNeedAI: onNeedAI, onReply: onReply)
+                SentenceView(result: result, model: model, onNeedAI: onNeedAI, onReply: onReply)
+            }
+
+            if let original = model.preservedOriginal {
+                preserved(original)
             }
         }
+    }
+
+    /// “对调”之后，最初输入的原文一直留在这里
+    private func preserved(_ original: String) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                SectionHeader(title: "最初的原文")
+                Button("恢复") { model.restoreOriginal() }
+                    .font(.footnote.weight(.semibold))
+                    .frame(minWidth: 44, minHeight: 44)
+                    .padding(.vertical, -12)
+            }
+            Text(original)
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .textSelection(.enabled)
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.lxSurface, in: .rect(cornerRadius: 18))
     }
 
     /// 还没输入时：没有侧栏就显示最近的记录，有侧栏时只给一句提示
@@ -195,7 +214,7 @@ struct ResultContent: View {
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: .infinity)
-                .padding(.top, 60)
+                .padding(.top, 40)
         }
     }
 

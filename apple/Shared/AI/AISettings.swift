@@ -32,21 +32,30 @@ enum AIProvider: String, CaseIterable, Identifiable {
     var defaultModel: String {
         switch self {
         case .claude: "claude-opus-5-5"
-        case .openai: "gpt-6.1-sol"
+        case .openai: "gpt-6-luna"
         case .deepseek: "deepseek-chat"
         case .custom: ""
         }
     }
 
-    /// 下拉里直接可选的模型；其它模型可以手动填写
-    var suggestedModels: [String] {
+    /// 下拉里直接可选的模型，按代分组，每组里从便宜到贵；其它模型可以手动填写
+    var modelGroups: [(title: String, models: [String])] {
         switch self {
-        case .claude: ["claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-4-5"]
-        case .openai: ["gpt-6-astra", "gpt-6.1-sol", "gpt-6-luna"]
-        case .deepseek: ["deepseek-chat", "deepseek-reasoner"]
-        case .custom: []
+        case .claude:
+            [("Claude", ["claude-haiku-4-5", "claude-sonnet-5-5", "claude-opus-5-5"])]
+        case .openai:
+            [("GPT-6", ["gpt-6-luna", "gpt-6.1-sol", "gpt-6-sol", "gpt-6-astra"]),
+             ("GPT-5", ["gpt-5-nano", "gpt-5-mini", "gpt-5", "gpt-5.1", "gpt-5.2", "gpt-5.4-nano", "gpt-5.4-mini",
+                        "gpt-5.4", "gpt-5.5", "gpt-5.6-luna", "gpt-5.6-terra", "gpt-5.6-sol"]),
+             ("GPT-4", ["gpt-4.1-nano", "gpt-4.1-mini", "gpt-4.1", "gpt-4o-mini", "gpt-4o"])]
+        case .deepseek:
+            [("DeepSeek", ["deepseek-chat", "deepseek-reasoner"])]
+        case .custom:
+            []
         }
     }
+
+    var suggestedModels: [String] { modelGroups.flatMap(\.models) }
 
     /// OpenAI 兼容接口的地址（Claude 走自己的 Messages API，不用这个）
     var defaultBaseURL: String {

@@ -2,11 +2,14 @@ import PhotosUI
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// 输入栏：文字输入，输入为空时右侧是图片入口，否则是清空按钮。
+/// 输入区：上面是多行输入框（内容多了在框内滚动），下面一行是图片、朗读、清空和翻译。
 struct InputBar: View {
     @ObservedObject var model: TranslatorModel
     var focused: FocusState<Bool>.Binding
+    /// 输入框最多展开到几行，由屏幕高度决定（整个输入区不超过屏幕的 30%）
+    let maxLines: Int
 
+    @ObservedObject private var speaker = Speaker.shared
     @State private var showFileImporter = false
     #if os(iOS)
     @State private var showPhotoPicker = false
@@ -15,52 +18,55 @@ struct InputBar: View {
     #endif
 
     var body: some View {
-        HStack(alignment: .bottom, spacing: 2) {
+        VStack(spacing: 0) {
             TextField("输入单词、句子或一段话", text: $model.input, axis: .vertical)
                 .textFieldStyle(.plain)
-                .font(.system(size: 17))
-                // 输入时最多展开到 6 行，离开输入框后收起，把空间留给结果
-                .lineLimit(focused.wrappedValue ? 1...6 : 1...2)
+                .font(.system(size: 18))
+                .lineLimit(3...max(3, maxLines))
                 .focused(focused)
                 .onSubmit { model.submit() }
                 .onChange(of: model.input) { model.inputChanged() }
-                .padding(.vertical, 11)
+                .padding(.horizontal, 16)
+                .padding(.top, 14)
+                .padding(.bottom, 4)
 
-            if model.input.isEmpty {
+            HStack(spacing: 0) {
                 imageButton
-            } else {
+                if !model.input.trimmed.isEmpty {
+                    let speech = Speech.text(model.input.trimmed, isChinese: model.sourceIsChinese(model.input))
+                    iconButton(speaker.playing == speech ? "stop.fill" : "speaker.wave.2",
+                               label: speaker.playing == speech ? "停止朗读" : "朗读原文") {
+                        speaker.toggle(speech)
+                    }
+                }
+                Spacer()
+                if !model.input.isEmpty {
+                    iconButton("xmark.circle.fill", label: "清空") {
+                        model.input = ""
+                        focused.wrappedValue = true
+                    }
+                }
                 Button {
-                    model.input = ""
-                    focused.wrappedValue = true
+                    model.submit()
+                    #if os(iOS)
+                    focused.wrappedValue = false
+                    #endif
                 } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .foregroundStyle(.tertiary)
-                        .frame(width: 40, height: 44)
+                    Label("翻译", systemImage: "arrow.up")
+                        .font(.callout.weight(.bold))
+                        .foregroundStyle(Color.lxOnAccent)
+                        .padding(.horizontal, 14)
+                        .frame(height: 36)
+                        .background(Color.lxAccent, in: .capsule)
+                        .frame(height: 44)
                         .contentShape(.rect)
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("清空")
             }
-
-            Button {
-                model.submit()
-                #if os(iOS)
-                focused.wrappedValue = false
-                #endif
-            } label: {
-                Image(systemName: "arrow.up")
-                    .font(.system(size: 16, weight: .bold))
-                    .foregroundStyle(Color.lxOnAccent)
-                    .frame(width: 36, height: 36)
-                    .background(Color.lxAccent, in: .circle)
-                    .frame(width: 44, height: 44)
-                    .contentShape(.rect)
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("翻译")
+            .padding(.leading, 6)
+            .padding(.trailing, 8)
+            .padding(.bottom, 2)
         }
-        .padding(.leading, 18)
-        .padding(.trailing, 4)
         .glassEffect(.regular, in: .rect(cornerRadius: 24))
         .fileImporter(isPresented: $showFileImporter, allowedContentTypes: [.image]) { result in
             guard case .success(let url) = result else { return }
@@ -85,6 +91,17 @@ struct InputBar: View {
         #endif
     }
 
+    private func iconButton(_ systemName: String, label: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: systemName)
+                .foregroundStyle(.secondary)
+                .frame(width: 44, height: 44)
+                .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(label)
+    }
+
     @ViewBuilder
     private var imageButton: some View {
         #if os(iOS)
@@ -97,20 +114,13 @@ struct InputBar: View {
         } label: {
             Image(systemName: "camera")
                 .foregroundStyle(.secondary)
-                .frame(width: 40, height: 44)
+                .frame(width: 44, height: 44)
                 .contentShape(.rect)
         }
         .accessibilityLabel("拍照或选择图片翻译")
         #else
-        Button { showFileImporter = true } label: {
-            Image(systemName: "photo")
-                .foregroundStyle(.secondary)
-                .frame(width: 40, height: 44)
-                .contentShape(.rect)
-        }
-        .buttonStyle(.plain)
-        .help("选择图片翻译，也可以直接 ⌘V 粘贴或拖入图片")
-        .accessibilityLabel("选择图片翻译")
+        iconButton("photo", label: "选择图片翻译") { showFileImporter = true }
+            .help("选择图片翻译，也可以直接 ⌘V 粘贴或拖入图片")
         #endif
     }
 }

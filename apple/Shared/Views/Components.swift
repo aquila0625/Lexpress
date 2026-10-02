@@ -42,23 +42,31 @@ struct GlassPillButton: View {
     }
 }
 
-/// 翻译方向：根据输入自动识别
+/// 翻译方向：默认自动识别，点一下在英译中、中译英之间切换
 struct DirectionPill: View {
-    let sourceIsChinese: Bool
+    @ObservedObject var model: TranslatorModel
 
     var body: some View {
-        HStack(spacing: 6) {
-            Text(sourceIsChinese ? "中" : "英")
-            Image(systemName: "arrow.right").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-            Text(sourceIsChinese ? "英" : "中")
-            Text("自动").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+        let sourceIsChinese = model.sourceIsChinese(model.input)
+        Button {
+            model.toggleDirection()
+        } label: {
+            HStack(spacing: 6) {
+                Text(sourceIsChinese ? "中" : "英")
+                Image(systemName: "arrow.left.arrow.right").font(.caption.weight(.semibold)).foregroundStyle(Color.lxAccent)
+                Text(sourceIsChinese ? "英" : "中")
+                if model.direction == .auto {
+                    Text("自动").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                }
+            }
+            .font(.callout.weight(.semibold))
+            .padding(.horizontal, 16)
+            .frame(height: 44)
+            .contentShape(.capsule)
         }
-        .font(.callout.weight(.semibold))
-        .padding(.horizontal, 16)
-        .frame(height: 44)
-        .glassEffect(.regular, in: .capsule)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(sourceIsChinese ? "中文翻译成英文，自动识别" : "英文翻译成中文，自动识别")
+        .buttonStyle(.plain)
+        .glassEffect(.regular.interactive(), in: .capsule)
+        .accessibilityLabel((sourceIsChinese ? "中文翻译成英文" : "英文翻译成中文") + (model.direction == .auto ? "，自动识别" : "") + "。点按切换方向")
     }
 }
 
@@ -113,19 +121,38 @@ struct Chip: View {
     }
 }
 
+/// 小喇叭：点一下朗读，正在读时变成停止
 struct SpeakButton: View {
-    let action: () -> Void
+    let speech: Speech
+    @ObservedObject private var speaker = Speaker.shared
 
     var body: some View {
-        Button(action: action) {
-            Image(systemName: "speaker.wave.2.fill")
+        let playing = speaker.playing == speech
+        Button {
+            speaker.toggle(speech)
+        } label: {
+            Image(systemName: playing ? "stop.fill" : "speaker.wave.2.fill")
                 .font(.footnote)
                 .foregroundStyle(Color.lxAccent)
                 .frame(width: 36, height: 36)
                 .contentShape(.rect)
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("朗读")
+        .accessibilityLabel(playing ? "停止朗读" : "朗读")
+    }
+}
+
+/// “朗读”胶囊按钮：正在读时变成“停止”
+struct SpeakPill: View {
+    let speech: Speech
+    @ObservedObject private var speaker = Speaker.shared
+
+    var body: some View {
+        let playing = speaker.playing == speech
+        GlassPillButton(title: playing ? "停止" : "朗读", systemName: playing ? "stop.fill" : "speaker.wave.2",
+                        tint: playing ? .lxAccent : .primary) {
+            speaker.toggle(speech)
+        }
     }
 }
 
@@ -134,7 +161,7 @@ struct ExampleRow: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 2) {
-            SpeakButton { Speaker.shared.english(example.english) }
+            SpeakButton(speech: .english(example.english))
                 .padding(.top, -8)
             VStack(alignment: .leading, spacing: 2) {
                 Text(rich(example.source)).font(.callout)
