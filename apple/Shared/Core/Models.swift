@@ -1,29 +1,29 @@
 import Foundation
 
-struct Phonetic: Identifiable {
-    let id = UUID()
+struct Phonetic: Identifiable, Codable {
+    var id = UUID()
     let label: String      // 英 / 美
     let ipa: String
     let accent: Int        // 有道发音参数：1 英音，2 美音
 }
 
 /// 按词性汇总的一行释义，例如 “v. 充电；控告；收费”
-struct Definition: Identifiable {
-    let id = UUID()
+struct Definition: Identifiable, Codable {
+    var id = UUID()
     let text: String
     let note: String?
 }
 
-struct ExamplePair: Identifiable {
-    let id = UUID()
+struct ExamplePair: Identifiable, Codable {
+    var id = UUID()
     let source: String        // 可能带 <b> 高亮
     let translation: String
     let english: String       // 用于朗读的英文原句
 }
 
 /// 单个义项：一个意思配它自己的词性和例句
-struct Sense: Identifiable {
-    let id = UUID()
+struct Sense: Identifiable, Codable {
+    var id = UUID()
     let pos: String?
     let meaning: String
     /// 词典把这个义项标为考试常见义，用来把常用义排在前面
@@ -31,40 +31,40 @@ struct Sense: Identifiable {
     let examples: [ExamplePair]
 }
 
-struct CollinsSense: Identifiable {
-    let id = UUID()
+struct CollinsSense: Identifiable, Codable {
+    var id = UUID()
     let pos: String?
     let explanation: String   // 英文解释 + 中文释义，可能带 <b>
     let examples: [ExamplePair]
 }
 
-struct Phrase: Identifiable {
-    let id = UUID()
+struct Phrase: Identifiable, Codable {
+    var id = UUID()
     let key: String
     let value: String
 }
 
-struct RelatedWord: Identifiable {
-    let id = UUID()
+struct RelatedWord: Identifiable, Codable {
+    var id = UUID()
     let pos: String
     let word: String
     let meaning: String
 }
 
 /// 近义词辨析：一组容易混淆的词和各自的用法
-struct Distinction: Identifiable {
-    let id = UUID()
+struct Distinction: Identifiable, Codable {
+    var id = UUID()
     let title: String
     let usages: [Phrase]
 }
 
-struct Suggestion: Identifiable {
-    let id = UUID()
+struct Suggestion: Identifiable, Codable {
+    var id = UUID()
     let word: String
     let meaning: String
 }
 
-struct WordEntry {
+struct WordEntry: Codable {
     var word: String
     var isChinese: Bool
     var phonetics: [Phonetic] = []
@@ -91,7 +91,7 @@ struct WordEntry {
     }
 }
 
-struct SentenceResult {
+struct SentenceResult: Codable {
     let source: String
     var translation: String
     let sourceIsChinese: Bool

@@ -6,7 +6,7 @@ struct AIError: LocalizedError {
 }
 
 /// 一次 AI 请求消耗的 token 数，由服务商在响应里给出
-struct AIUsage: Equatable {
+struct AIUsage: Equatable, Codable {
     let input: Int
     let output: Int
     var total: Int { input + output }

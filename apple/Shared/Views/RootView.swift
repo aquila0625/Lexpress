@@ -165,7 +165,7 @@ struct ResultContent: View {
             case .failed(let message):
                 Label(message, systemImage: "exclamationmark.triangle").foregroundStyle(.secondary)
             case .word(let entry):
-                WordView(entry: entry, model: model, wide: wide)
+                WordView(entry: entry, onLookup: { model.lookup($0) }, wide: wide)
             case .sentence(let result):
                 SentenceView(result: result, model: model, onNeedAI: onNeedAI, onReply: onReply)
             }

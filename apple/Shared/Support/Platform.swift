@@ -34,6 +34,18 @@ extension PlatformImage {
     }
 }
 
+extension PlatformImage {
+    /// 存到本机时用的 JPEG 数据
+    var storageData: Data? {
+        #if os(macOS)
+        guard let tiff = tiffRepresentation, let rep = NSBitmapImageRep(data: tiff) else { return nil }
+        return rep.representation(using: .jpeg, properties: [.compressionFactor: 0.85])
+        #else
+        return jpegData(compressionQuality: 0.85)
+        #endif
+    }
+}
+
 extension Image {
     init(platformImage: PlatformImage) {
         #if os(macOS)

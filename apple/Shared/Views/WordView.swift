@@ -3,7 +3,8 @@ import SwiftUI
 /// 单词 / 短语的词典结果。窄屏单栏，宽屏分左右两栏。
 struct WordView: View {
     let entry: WordEntry
-    @ObservedObject var model: TranslatorModel
+    /// 点词组、同根词等时查这个词
+    let onLookup: (String) -> Void
     let wide: Bool
 
     @ObservedObject private var history = HistoryStore.shared
@@ -39,7 +40,7 @@ struct WordView: View {
                     ForEach(entry.definitions) { d in
                         HStack(alignment: .top, spacing: 4) {
                             VStack(alignment: .leading, spacing: 2) {
-                                Button(d.text) { model.lookup(d.text) }
+                                Button(d.text) { onLookup(d.text) }
                                     .buttonStyle(.plain)
                                     .font(.system(size: 21, weight: .medium, design: .serif))
                                     .foregroundStyle(Color.lxAccent)
@@ -147,7 +148,7 @@ struct WordView: View {
             Block("常用搭配") {
                 VStack(spacing: 0) {
                     ForEach(entry.phrases) { p in
-                        PhraseRow(key: p.key, value: p.value) { model.lookup(p.key) }
+                        PhraseRow(key: p.key, value: p.value) { onLookup(p.key) }
                     }
                 }
             }
@@ -163,7 +164,7 @@ struct WordView: View {
             Block("同根词") {
                 VStack(spacing: 0) {
                     ForEach(entry.related) { r in
-                        PhraseRow(key: r.word, value: "\(r.pos) \(r.meaning)", serif: true) { model.lookup(r.word) }
+                        PhraseRow(key: r.word, value: "\(r.pos) \(r.meaning)", serif: true) { onLookup(r.word) }
                     }
                 }
             }
@@ -225,7 +226,7 @@ struct WordView: View {
 }
 
 /// “英 /tʃɑːdʒ/ 🔊” 这样的发音按钮
-private struct PronunciationPill: View {
+struct PronunciationPill: View {
     let label: String
     let text: String
     let speech: Speech
