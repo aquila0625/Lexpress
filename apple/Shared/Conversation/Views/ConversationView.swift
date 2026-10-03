@@ -22,6 +22,8 @@ struct ConversationView: View {
     @State private var highlighted: UUID?
     /// 这次打开后新翻译的轮次默认展开；重新打开会话时长内容都收起
     @State private var expandedTurns: Set<UUID> = []
+    /// 往上翻看历史时，右下角出现回到底部的箭头
+    @State private var awayFromBottom = false
     @State private var renaming = false
     @State private var renameText = ""
     @State private var confirmDelete = false
@@ -84,6 +86,31 @@ struct ConversationView: View {
                 }
                 .scrollDismissesKeyboard(.interactively)
                 .defaultScrollAnchor(.bottom)
+                .onScrollGeometryChange(for: Bool.self) { geometry in
+                    geometry.contentOffset.y + geometry.containerSize.height < geometry.contentSize.height - 100
+                } action: { _, away in
+                    withAnimation(.snappy) { awayFromBottom = away }
+                }
+                .overlay(alignment: .bottom) {
+                    if awayFromBottom, let last = session?.turns.last?.id {
+                        Button {
+                            withAnimation(.snappy) { proxy.scrollTo(last, anchor: .bottom) }
+                        } label: {
+                            Image(systemName: "arrow.down")
+                                .font(.system(size: 16, weight: .bold))
+                                .foregroundStyle(Color.lxAccent)
+                                .frame(width: 44, height: 44)
+                                .background(Color.lxBackground, in: .circle)
+                                .overlay { Circle().stroke(Color.primary.opacity(0.08)) }
+                                .shadow(color: .black.opacity(0.15), radius: 10, y: 3)
+                                .contentShape(.circle)
+                        }
+                        .buttonStyle(.plain)
+                        .padding(.bottom, 10)
+                        .transition(.scale.combined(with: .opacity))
+                        .accessibilityLabel("回到最新的翻译")
+                    }
+                }
                 .overlay {
                     // 空会话的提示放在可见区域中间，不随滚动贴底
                     if let session, session.turns.isEmpty {
