@@ -7,6 +7,7 @@ struct WordSheet: View {
     /// 词典里查不到的词组，用它翻译
     let translate: (String) async -> String?
 
+    @Environment(\.dismiss) private var dismiss
     @State private var path: [String] = []
 
     var body: some View {
@@ -15,7 +16,13 @@ struct WordSheet: View {
                 .navigationDestination(for: String.self) { next in
                     WordPage(word: next, translate: translate) { path.append($0) }
                 }
+                #if os(macOS)
+                .toolbar { ToolbarItem(placement: .cancellationAction) { Button("关闭") { dismiss() } } }
+                #endif
         }
+        #if os(macOS)
+        .frame(minWidth: 560, minHeight: 640)
+        #endif
         .presentationDragIndicator(.visible)
         .tint(.lxAccent)
     }
@@ -60,7 +67,7 @@ struct WordPage: View {
         }
         .background(Color.lxBackground)
         .navigationTitle(entry == nil ? word : "")
-        .navigationBarTitleDisplayMode(.inline)
+        .inlineNavigationTitle()
         .task {
             guard entry == nil, loaded == nil, translation == nil else { return }
             loaded = try? await Youdao.lookup(word).entry
@@ -75,6 +82,7 @@ struct StarredWordsView: View {
     let translate: (String) async -> String?
 
     @ObservedObject private var history = HistoryStore.shared
+    @Environment(\.dismiss) private var dismiss
     @State private var path: [String] = []
 
     var body: some View {
@@ -102,8 +110,14 @@ struct StarredWordsView: View {
                 WordPage(word: word, translate: translate) { path.append($0) }
             }
             .navigationTitle("生词本")
-            .navigationBarTitleDisplayMode(.inline)
+            .inlineNavigationTitle()
+            #if os(macOS)
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("关闭") { dismiss() } } }
+            #endif
         }
+        #if os(macOS)
+        .frame(minWidth: 560, minHeight: 640)
+        #endif
         .presentationDragIndicator(.visible)
         .tint(.lxAccent)
     }
@@ -158,13 +172,18 @@ struct ImageEditView: View {
             }
             .background(Color.black.ignoresSafeArea())
             .navigationTitle(index.map { "图 \($0 + 1) / \(turn?.images.count ?? 0)" } ?? "")
-            .navigationBarTitleDisplayMode(.inline)
+            .inlineNavigationTitle()
+            #if os(iOS)
             .toolbarColorScheme(.dark, for: .navigationBar)
+            #endif
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() } }
             }
         }
         .preferredColorScheme(.dark)
+        #if os(macOS)
+        .frame(minWidth: 640, minHeight: 560)
+        #endif
         .onChange(of: item == nil) { if item == nil { dismiss() } }
     }
 }

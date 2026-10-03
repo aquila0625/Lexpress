@@ -1,26 +1,26 @@
 import SwiftUI
 import Translation
 
-/// iPhone 的根界面：左边是抽屉，右边是会话。拉开抽屉时会话整体被推到右边。
+/// 根界面。iPhone（和 iPad 分屏的窄窗口）用抽屉：拉开时会话整体被推到右边；
+/// iPad 全屏时用和 Mac 一样的宽屏布局，左边常驻会话列表。
 struct ConversationRootView: View {
     @StateObject private var controller = ConversationController()
+    @Environment(\.horizontalSizeClass) private var sizeClass
+
+    var body: some View {
+        if sizeClass == .regular {
+            WideRootView(controller: controller)
+        } else {
+            PhoneRootView(controller: controller)
+        }
+    }
+}
+
+struct PhoneRootView: View {
+    @ObservedObject var controller: ConversationController
     @State private var drawerOpen = false
     @State private var dragOffset: CGFloat = 0
     @State private var sheet: RootSheet?
-
-    enum RootSheet: Identifiable {
-        case settings, newSession, newScene, editScene(UUID), starred
-
-        var id: String {
-            switch self {
-            case .settings: "settings"
-            case .newSession: "newSession"
-            case .newScene: "newScene"
-            case .editScene(let id): "scene-" + id.uuidString
-            case .starred: "starred"
-            }
-        }
-    }
 
     var body: some View {
         GeometryReader { geometry in
@@ -31,7 +31,7 @@ struct ConversationRootView: View {
             ZStack(alignment: .topLeading) {
                 DrawerView(controller: controller, store: controller.store,
                            onSelect: { setDrawer(false) },
-                           onAction: handle)
+                           onAction: { sheet = RootSheet($0) })
                     .frame(width: drawerWidth)
 
                 ConversationView(controller: controller, store: controller.store, screenHeight: fullHeight,
@@ -60,26 +60,7 @@ struct ConversationRootView: View {
         .translationTask(controller.translator.configuration) { session in
             await controller.translator.run(session)
         }
-        .sheet(item: $sheet) { sheet in
-            switch sheet {
-            case .settings: SettingsView()
-            case .newSession: NewSessionView(controller: controller, store: controller.store)
-            case .newScene: SceneEditorView(store: controller.store, sceneID: nil)
-            case .editScene(let id): SceneEditorView(store: controller.store, sceneID: id)
-            case .starred: StarredWordsView { await controller.quickTranslate($0) }
-            }
-        }
-    }
-
-    private func handle(_ action: DrawerAction) {
-        switch action {
-        case .newSession:
-            sheet = .newSession
-        case .newScene: sheet = .newScene
-        case .editScene(let id): sheet = .editScene(id)
-        case .starred: sheet = .starred
-        case .settings: sheet = .settings
-        }
+        .sheet(item: $sheet) { RootSheetContent(sheet: $0, controller: controller) }
     }
 
     private func setDrawer(_ open: Bool) {

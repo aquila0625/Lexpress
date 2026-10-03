@@ -17,22 +17,6 @@ struct TurnView: View {
     @State private var copied = false
     @State private var showBefore = false
 
-    /// 超过大约 4 行就算长内容，可以收起
-    static func isLong(_ text: String) -> Bool {
-        text.count > 120 || text.filter { $0 == "\n" }.count >= 4
-    }
-
-    private func expandButton(_ text: String) -> some View {
-        Button(action: onToggleExpand) {
-            Label(expanded ? "收起" : "展开全文", systemImage: expanded ? "chevron.up" : "chevron.down")
-                .font(.footnote.weight(.semibold))
-                .frame(minHeight: 36)
-                .contentShape(.rect)
-        }
-        .buttonStyle(.plain)
-        .foregroundStyle(Color.lxAccent)
-    }
-
     private var editing: Bool { editingTurn == turn.id }
 
     var body: some View {
@@ -63,13 +47,8 @@ struct TurnView: View {
     // MARK: 原文
 
     private var textSource: some View {
-        VStack(alignment: .trailing, spacing: 2) {
-            Text(turn.source)
-                .font(.system(size: 16))
-                .lineLimit(expanded ? nil : 4)
-                .textSelection(.enabled)
-            if Self.isLong(turn.source) { expandButton(turn.source) }
-        }
+        FoldableText(text: turn.source, font: .system(size: 16), expanded: expanded, alignment: .trailing,
+                     onToggle: onToggleExpand)
             .padding(.horizontal, 14)
             .padding(.vertical, 10)
             .background(Color.lxAccentSoft, in: UnevenRoundedRectangle(topLeadingRadius: 20, bottomLeadingRadius: 20,
@@ -188,6 +167,7 @@ struct TurnView: View {
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                 Button("重试") { controller.retry(turn.id) }
+                    .buttonStyle(.borderless)
                     .font(.footnote.weight(.semibold))
                     .frame(minHeight: 44)
             }
@@ -210,11 +190,8 @@ struct TurnView: View {
                     Divider()
                     Text("图 \(index + 1)").font(.caption.weight(.bold)).foregroundStyle(.secondary)
                     if item.done {
-                        Text(item.translation)
-                            .font(.system(size: 17, weight: .medium))
-                            .lineLimit(expanded ? nil : 4)
-                            .textSelection(.enabled)
-                        if Self.isLong(item.translation) { expandButton(item.translation) }
+                        FoldableText(text: item.translation, font: .system(size: 17, weight: .medium), expanded: expanded,
+                                     onToggle: onToggleExpand)
                     } else {
                         HStack(spacing: 8) {
                             ProgressView().controlSize(.small)
@@ -276,12 +253,8 @@ struct TurnView: View {
                     Text("AI 优化中…").font(.footnote).foregroundStyle(.secondary)
                 }
             }
-            Text(sentence.displayed)
-                .font(.system(size: 19, weight: .medium))
-                .lineSpacing(4)
-                .lineLimit(expanded ? nil : 4)
-                .textSelection(.enabled)
-            if Self.isLong(sentence.displayed) { expandButton(sentence.displayed) }
+            FoldableText(text: sentence.displayed, font: .system(size: 19, weight: .medium), lineSpacing: 4,
+                         expanded: expanded, onToggle: onToggleExpand)
             if sentence.showsAI {
                 if sentence.aiTranslation != sentence.translation {
                     // 优化前的译文默认折叠
@@ -329,6 +302,7 @@ struct TurnView: View {
             .padding(.leading, -12)
             if controller.offlineDownloadable, sentence.engine == OnlineTranslator.name {
                 Button("下载系统离线翻译模型（更快、不限量、无需联网）") { controller.downloadOfflineModel() }
+                    .buttonStyle(.borderless)
                     .font(.footnote)
                     .frame(minHeight: 44)
             }
@@ -401,6 +375,7 @@ struct WordCard: View {
                     .font(.footnote.weight(.semibold))
                     .frame(minHeight: 44)
             }
+            .buttonStyle(.borderless)
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -418,5 +393,55 @@ struct WordCard: View {
                 PronunciationPill(label: p.label, text: "/\(p.ipa)/", speech: .english(entry.word, accent: p.accent))
             }
         }
+    }
+}
+
+/// 超过 4 行时折叠；只有真的放不下时才出现“展开全文 / 收起”
+struct FoldableText: View {
+    let text: String
+    let font: Font
+    var lineSpacing: CGFloat = 0
+    let expanded: Bool
+    var alignment: HorizontalAlignment = .leading
+    let onToggle: () -> Void
+
+    private static let foldedLines = 4
+    @State private var fullHeight: CGFloat = 0
+    @State private var foldedHeight: CGFloat = 0
+
+    var body: some View {
+        VStack(alignment: alignment, spacing: 2) {
+            styled(Text(text))
+                .lineLimit(expanded ? nil : Self.foldedLines)
+                .textSelection(.enabled)
+                .background(alignment: .topLeading) {
+                    // 量一下完整高度和折叠后的高度，判断是不是真的被截断
+                    ZStack(alignment: .topLeading) {
+                        measured(styled(Text(text))) { fullHeight = $0 }
+                        measured(styled(Text(text)).lineLimit(Self.foldedLines)) { foldedHeight = $0 }
+                    }
+                    .hidden()
+                    .accessibilityHidden(true)
+                }
+            if fullHeight > foldedHeight + 1 {
+                Button(action: onToggle) {
+                    Label(expanded ? "收起" : "展开全文", systemImage: expanded ? "chevron.up" : "chevron.down")
+                        .font(.footnote.weight(.semibold))
+                        .frame(minHeight: 36)
+                        .contentShape(.rect)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(Color.lxAccent)
+            }
+        }
+    }
+
+    private func styled(_ text: Text) -> some View {
+        text.font(font).lineSpacing(lineSpacing)
+    }
+
+    private func measured(_ view: some View, _ update: @escaping (CGFloat) -> Void) -> some View {
+        view.fixedSize(horizontal: false, vertical: true)
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { update($0) }
     }
 }

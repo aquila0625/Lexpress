@@ -46,6 +46,41 @@ extension PlatformImage {
     }
 }
 
+extension PlatformImage {
+    /// 顺时针转 90°
+    func rotatedClockwise() -> PlatformImage {
+        let target = CGSize(width: size.height, height: size.width)
+        #if os(macOS)
+        let rotated = NSImage(size: target)
+        rotated.lockFocus()
+        let transform = NSAffineTransform()
+        transform.translateX(by: target.width / 2, yBy: target.height / 2)
+        transform.rotate(byDegrees: -90)
+        transform.concat()
+        draw(in: NSRect(x: -size.width / 2, y: -size.height / 2, width: size.width, height: size.height))
+        rotated.unlockFocus()
+        return rotated
+        #else
+        return UIGraphicsImageRenderer(size: target).image { context in
+            context.cgContext.translateBy(x: target.width / 2, y: target.height / 2)
+            context.cgContext.rotate(by: .pi / 2)
+            draw(in: CGRect(x: -size.width / 2, y: -size.height / 2, width: size.width, height: size.height))
+        }
+        #endif
+    }
+}
+
+extension View {
+    /// iOS 上用小标题；Mac 没有这个概念
+    func inlineNavigationTitle() -> some View {
+        #if os(iOS)
+        navigationBarTitleDisplayMode(.inline)
+        #else
+        self
+        #endif
+    }
+}
+
 extension Image {
     init(platformImage: PlatformImage) {
         #if os(macOS)

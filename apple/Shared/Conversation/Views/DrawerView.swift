@@ -56,6 +56,7 @@ struct DrawerView: View {
                 Button(editing ? "完成" : "编辑") {
                     withAnimation(.snappy) { editing.toggle() }
                 }
+                .buttonStyle(.borderless)
                 .font(.callout.weight(.semibold))
                 .frame(minWidth: 44, minHeight: 44)
             }
@@ -269,14 +270,24 @@ struct DrawerView: View {
             } label: {
                 Image(systemName: "plus").frame(width: 40, height: 44)
             }
+            .buttonStyle(.borderless)
             .accessibilityLabel("在\(scene.name)里新建会话")
 
             Button { onAction(.editScene(scene.id)) } label: {
                 Image(systemName: "ellipsis").frame(width: 40, height: 44)
             }
+            .buttonStyle(.borderless)
             .accessibilityLabel("编辑场景\(scene.name)")
         }
         .padding(.horizontal, 6)
+        .contextMenu {
+            Button("在这个场景里新建会话", systemImage: "plus") {
+                controller.newSession(sceneID: scene.id)
+                onSelect()
+            }
+            Button("编辑场景", systemImage: "pencil") { onAction(.editScene(scene.id)) }
+            Button("删除场景…", systemImage: "trash", role: .destructive) { deletingScene = scene }
+        }
         // 淡淡的底色，和下面的会话区分开
         .background(armed ? Color.lxAccentSoft : Color.lxSurface, in: .rect(cornerRadius: 14))
         .overlay {
@@ -451,7 +462,9 @@ struct DrawerEditList: View {
                 }
             }
             .listStyle(.plain)
+            #if os(iOS)
             .environment(\.editMode, .constant(.active))
+            #endif
         }
     }
 
@@ -479,6 +492,19 @@ struct DrawerEditList: View {
     }
 }
 
+#if os(macOS)
+/// Mac 上没有左滑：右键菜单里的“删除”，由调用方弹出确认
+struct SwipeToDelete<Content: View>: View {
+    let id: String
+    @Binding var openRow: String?
+    let onDelete: () -> Void
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        content.accessibilityAction(named: "删除") { onDelete() }
+    }
+}
+#else
 /// 左滑露出红色“删除”按钮；点按钮后由调用方弹出确认
 struct SwipeToDelete<Content: View>: View {
     let id: String
@@ -526,6 +552,8 @@ struct SwipeToDelete<Content: View>: View {
         .accessibilityAction(named: "删除") { onDelete() }
     }
 }
+
+#endif
 
 /// 删除场景的确认：可以勾选“连同里面的会话一起删除”，默认不勾选
 struct DeleteSceneSheet: View {
@@ -587,11 +615,15 @@ struct DeleteSceneSheet: View {
             .controlSize(.large)
         }
         .padding(24)
+        #if os(macOS)
+        .frame(width: 440)
+        #endif
         .presentationDetents([.height(alsoSessions ? 330 : 300)])
         .presentationDragIndicator(.visible)
     }
 }
 
+#if os(iOS)
 /// 只在横向滑动时才开始的拖动手势（UIKit 的 pan），竖着滑仍然交给列表滚动
 struct HorizontalPan: UIGestureRecognizerRepresentable {
     let onChange: (CGFloat) -> Void
@@ -622,3 +654,4 @@ struct HorizontalPan: UIGestureRecognizerRepresentable {
         }
     }
 }
+#endif

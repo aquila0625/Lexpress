@@ -8,10 +8,13 @@ struct ConversationView: View {
     let onMenu: () -> Void
     let onNewSession: () -> Void
     let onSettings: () -> Void
+    /// 宽屏（Mac、iPad 横屏）：左边常驻会话列表，输入记录放在右边一栏
+    var wide = false
 
     @FocusState private var composerFocused: Bool
     @State private var editingTurn: UUID?
     @State private var showOutline = false
+    @AppStorage("wide.showOutline") private var showOutlineRail = true
     @State private var scrollTarget: UUID?
     /// 从输入记录跳过来的那一轮，短暂高亮
     @State private var highlighted: UUID?
@@ -32,6 +35,20 @@ struct ConversationView: View {
 
     var body: some View {
         let session = store.session(controller.currentID)
+        HStack(spacing: 0) {
+            main(session)
+            if wide, showOutlineRail {
+                Divider().ignoresSafeArea()
+                OutlinePanel(turns: session?.turns ?? []) { scrollTarget = $0 } onClose: {
+                    withAnimation(.snappy) { showOutlineRail = false }
+                }
+                .frame(width: 270)
+                .transition(.move(edge: .trailing))
+            }
+        }
+    }
+
+    private func main(_ session: ChatSession?) -> some View {
         VStack(spacing: 0) {
             navBar(session)
             ScrollViewReader { proxy in
@@ -113,9 +130,15 @@ struct ConversationView: View {
         .sheet(item: Binding(get: { replyTo.map(IdentifiedSentence.init) }, set: { replyTo = $0?.result })) { item in
             ReplyView(received: item.result.source, receivedTranslation: item.result.displayed)
         }
+        #if os(iOS)
         .fullScreenCover(item: $editingImage) { ref in
             ImageEditView(controller: controller, store: store, turnID: ref.turnID, imageID: ref.imageID)
         }
+        #else
+        .sheet(item: $editingImage) { ref in
+            ImageEditView(controller: controller, store: store, turnID: ref.turnID, imageID: ref.imageID)
+        }
+        #endif
         .alert("重命名会话", isPresented: $renaming) {
             TextField("名称", text: $renameText)
             Button("取消", role: .cancel) {}
@@ -131,9 +154,11 @@ struct ConversationView: View {
 
     private func navBar(_ session: ChatSession?) -> some View {
         HStack(spacing: 8) {
-            GlassIconButton(systemName: "line.3.horizontal", label: "打开会话列表") {
-                composerFocused = false
-                onMenu()
+            if !wide {
+                GlassIconButton(systemName: "line.3.horizontal", label: "打开会话列表") {
+                    composerFocused = false
+                    onMenu()
+                }
             }
             Menu {
                 Button("重命名", systemImage: "pencil") {
@@ -156,13 +181,26 @@ struct ConversationView: View {
                     Image(systemName: "chevron.down").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                 }
                 .padding(.horizontal, 14)
-                .frame(maxWidth: .infinity, minHeight: 44)
+                .frame(maxWidth: wide ? nil : .infinity, minHeight: 44)
                 .contentShape(.capsule)
             }
             .foregroundStyle(.primary)
             .glassEffect(.regular.interactive(), in: .capsule)
             .accessibilityLabel("当前会话：\(session?.title ?? "")，点按重命名或移动")
-            GlassIconButton(systemName: "list.bullet", label: "输入记录") { showOutline = true }
+            #if os(macOS)
+            .menuStyle(.button)
+            .buttonStyle(.plain)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            #endif
+            if wide { Spacer(minLength: 0) }
+            GlassIconButton(systemName: "list.bullet", label: "输入记录") {
+                if wide {
+                    withAnimation(.snappy) { showOutlineRail.toggle() }
+                } else {
+                    showOutline = true
+                }
+            }
             GlassIconButton(systemName: "square.and.pencil", label: "新建会话") { onNewSession() }
         }
         .padding(.horizontal, 12)
@@ -183,7 +221,11 @@ struct ConversationView: View {
             }
             VStack(alignment: .leading, spacing: 12) {
                 tip("text.cursor", "单词、句子或整段文字都可以")
+                #if os(macOS)
+                tip("photo.on.rectangle", "⌘V 粘贴截图，或把图片拖进来")
+                #else
                 tip("plus.circle", "点左下角的 + 拍照或选图片")
+                #endif
                 tip("tray.full", "每次翻译都会保存在这个会话里")
             }
             .padding(16)
@@ -223,46 +265,104 @@ struct OutlineView: View {
 
     var body: some View {
         NavigationStack {
-            List {
-                let q = query.trimmed.lowercased()
-                ForEach(Array(turns.enumerated()), id: \.element.id) { index, turn in
-                    if q.isEmpty || turn.searchableText.lowercased().contains(q) {
-                        Button {
-                            onSelect(turn.id)
-                            dismiss()
-                        } label: {
-                            HStack(alignment: .top, spacing: 10) {
-                                Text("\(index + 1)")
-                                    .font(.footnote.weight(.bold).monospacedDigit())
-                                    .foregroundStyle(.secondary)
-                                    .frame(width: 22, alignment: .trailing)
-                                VStack(alignment: .leading, spacing: 3) {
-                                    Text(turn.outlineText).lineLimit(2)
-                                    HStack(spacing: 6) {
-                                        Text(meta(turn)).font(.caption).foregroundStyle(.secondary)
-                                        if turn.edited {
-                                            Text("已编辑").font(.caption2.weight(.bold))
-                                                .padding(.horizontal, 5)
-                                                .background(Color.secondary.opacity(0.15), in: .rect(cornerRadius: 5))
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        .foregroundStyle(.primary)
-                    }
-                }
+            OutlineList(turns: turns, query: query) {
+                onSelect($0)
+                dismiss()
             }
-            .overlay {
-                if turns.isEmpty { ContentUnavailableView("还没有内容", systemImage: "text.bubble") }
-            }
+            #if os(iOS)
             .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "搜索输入过的内容和译文")
+            #else
+            .searchable(text: $query, prompt: "搜索输入过的内容和译文")
+            #endif
             .navigationTitle("输入记录")
-            .navigationBarTitleDisplayMode(.inline)
+            .inlineNavigationTitle()
         }
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
         .tint(.lxAccent)
+    }
+}
+
+/// 宽屏右边的一栏输入记录
+struct OutlinePanel: View {
+    let turns: [Turn]
+    let onSelect: (UUID) -> Void
+    let onClose: () -> Void
+
+    @State private var query = ""
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("输入记录").font(.headline)
+                Spacer()
+                Button(action: onClose) {
+                    Image(systemName: "sidebar.trailing").frame(width: 32, height: 32)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+                .accessibilityLabel("收起输入记录")
+            }
+            HStack(spacing: 6) {
+                Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+                TextField("在会话里搜索", text: $query).textFieldStyle(.plain)
+            }
+            .padding(.horizontal, 12)
+            .frame(height: 34)
+            .background(Color.lxSurface, in: .capsule)
+            OutlineList(turns: turns, query: query, onSelect: onSelect)
+        }
+        .padding(.horizontal, 10)
+        .padding(.top, 12)
+        .background(Color.lxBackground.ignoresSafeArea())
+    }
+}
+
+/// 输入记录的列表本体
+struct OutlineList: View {
+    let turns: [Turn]
+    let query: String
+    let onSelect: (UUID) -> Void
+
+    var body: some View {
+        List {
+            let q = query.trimmed.lowercased()
+            ForEach(Array(turns.enumerated()), id: \.element.id) { index, turn in
+                if q.isEmpty || turn.searchableText.lowercased().contains(q) {
+                    Button {
+                        onSelect(turn.id)
+                    } label: {
+                        HStack(alignment: .top, spacing: 10) {
+                            Text("\(index + 1)")
+                                .font(.footnote.weight(.bold).monospacedDigit())
+                                .foregroundStyle(.secondary)
+                                .frame(width: 22, alignment: .trailing)
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(turn.outlineText).lineLimit(2)
+                                HStack(spacing: 6) {
+                                    Text(meta(turn)).font(.caption).foregroundStyle(.secondary)
+                                    if turn.edited {
+                                        Text("已编辑").font(.caption2.weight(.bold))
+                                            .padding(.horizontal, 5)
+                                            .background(Color.secondary.opacity(0.15), in: .rect(cornerRadius: 5))
+                                    }
+                                }
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(.rect)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+        #if os(macOS)
+        .listStyle(.sidebar)
+        .scrollContentBackground(.hidden)
+        #endif
+        .overlay {
+            if turns.isEmpty { ContentUnavailableView("还没有内容", systemImage: "text.bubble") }
+        }
     }
 
     private func meta(_ turn: Turn) -> String {

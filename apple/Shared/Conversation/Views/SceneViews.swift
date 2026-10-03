@@ -96,8 +96,11 @@ struct SceneEditorView: View {
                 }
             }
             .navigationTitle(sceneID == nil ? "新建场景" : "编辑场景")
-            .navigationBarTitleDisplayMode(.inline)
+            .inlineNavigationTitle()
             .toolbar {
+                #if os(macOS)
+                ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() } }
+                #endif
                 ToolbarItem(placement: .confirmationAction) {
                     Button(sceneID == nil ? "创建" : "保存") { save() }
                         .disabled(name.trimmed.isEmpty)
@@ -112,6 +115,9 @@ struct SceneEditorView: View {
                 Text("要连同会话一起删除，请在列表里左滑场景，再勾选“同时删除会话”。")
             }
         }
+        #if os(macOS)
+        .frame(minWidth: 460, minHeight: 520)
+        #endif
         .presentationDragIndicator(.visible)
         .tint(.lxAccent)
         .onAppear {
@@ -173,8 +179,11 @@ struct NewSessionView: View {
                 }
             }
             .navigationTitle("新建会话")
-            .navigationBarTitleDisplayMode(.inline)
+            .inlineNavigationTitle()
             .toolbar {
+                #if os(macOS)
+                ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() } }
+                #endif
                 ToolbarItem(placement: .confirmationAction) {
                     Button("创建") {
                         let session = store.createSession(title: name, sceneID: sceneID, aiEnabled: aiEnabled)
@@ -187,6 +196,9 @@ struct NewSessionView: View {
                 SceneEditorView(store: store, sceneID: nil) { sceneID = $0.id }
             }
         }
+        #if os(macOS)
+        .frame(minWidth: 460, minHeight: 520)
+        #endif
         .presentationDragIndicator(.visible)
         .tint(.lxAccent)
     }

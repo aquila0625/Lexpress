@@ -5,7 +5,7 @@ import UniformTypeIdentifiers
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
-    private let model = TranslatorModel()
+    private let controller = ConversationController()
     private var window: NSWindow!
     private var hotKey: HotKey?
     private var escapeMonitor: Any?
@@ -20,10 +20,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
         window.isReleasedWhenClosed = false   // 关窗只是隐藏，再次呼出不用重建
-        window.minSize = NSSize(width: 420, height: 420)
-        window.contentView = NSHostingView(rootView: RootView(model: model))
+        window.minSize = NSSize(width: 760, height: 480)
+        window.isMovableByWindowBackground = true
+        window.contentView = NSHostingView(rootView: WideRootView(controller: controller))
         window.center()
-        window.setFrameAutosaveName("LexpressMainWindow.v3")
+        window.setFrameAutosaveName("LexpressMainWindow.v4")
 
         // ⌥D 全局呼出 / 隐藏
         hotKey = HotKey(keyCode: kVK_ANSI_D, modifiers: optionKey) { [weak self] in
@@ -47,9 +48,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // 支持带参数启动直接查询：open -a Lexpress --args hello，或传一张图片的路径
         let query = CommandLine.arguments.dropFirst().filter { !$0.hasPrefix("-") }.joined(separator: " ")
         if let image = NSImage(contentsOfFile: query) {
-            model.translateImage(image)
+            controller.sendImages([image])
         } else if !query.isEmpty {
-            model.lookup(query)
+            send(query)
         }
     }
 
@@ -66,14 +67,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let text = pasteboard.string(forType: .string)?.trimmed, !text.isEmpty else { return }
         log.info("service: received \(text.count, privacy: .public) characters")
         show()
-        model.lookup(text)
+        send(text)
+    }
+
+    /// 放进当前会话翻译
+    private func send(_ text: String) {
+        controller.draft = text
+        controller.send()
     }
 
     /// ⌘V：剪贴板里是图片就识别并翻译，否则按普通文字粘贴
     @objc func smartPaste(_ sender: Any?) {
         // 设置、写回复等面板打开时，只做普通粘贴
         if window.attachedSheet == nil, let image = Self.image(from: .general) {
-            model.translateImage(image)
+            controller.sendImages([image])
         } else {
             NSApp.sendAction(#selector(NSText.paste(_:)), to: nil, from: sender)
         }
@@ -95,6 +102,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return NSImage(pasteboard: pasteboard)
     }
 
+    @objc func newSession(_ sender: Any?) {
+        show()
+        controller.newSession()
+        NotificationCenter.default.post(name: .focusInput, object: nil)
+    }
+
+    @objc func openSettings(_ sender: Any?) {
+        show()
+        NotificationCenter.default.post(name: .openSettings, object: nil)
+    }
+
     private func toggle() {
         if NSApp.isActive, window.isKeyWindow {
             NSApp.hide(nil)
@@ -114,10 +132,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let main = NSMenu()
 
         let app = NSMenu()
+        app.addItem(withTitle: "设置…", action: #selector(openSettings(_:)), keyEquivalent: ",").target = self
+        app.addItem(.separator())
         app.addItem(withTitle: "隐藏 Lexpress", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
         app.addItem(.separator())
         app.addItem(withTitle: "退出 Lexpress", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         main.addItem(submenu(app, title: "Lexpress"))
+
+        let file = NSMenu(title: "文件")
+        file.addItem(withTitle: "新建会话", action: #selector(newSession(_:)), keyEquivalent: "n").target = self
+        main.addItem(submenu(file, title: "文件"))
 
         let edit = NSMenu(title: "编辑")
         edit.addItem(withTitle: "撤销", action: Selector(("undo:")), keyEquivalent: "z")

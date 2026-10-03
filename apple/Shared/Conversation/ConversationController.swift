@@ -160,19 +160,11 @@ final class ConversationController: ObservableObject {
         }
     }
 
-    #if os(iOS)
     /// 把图片顺时针转 90°，然后只重新识别和翻译这一张
     func rotateImage(_ turnID: UUID, _ imageID: UUID) {
         guard let turn = store.turn(currentID, turnID), let item = turn.images.first(where: { $0.id == imageID }),
               let image = store.image(named: item.fileName) else { return }
-        let size = CGSize(width: image.size.height, height: image.size.width)
-        let rotated = UIGraphicsImageRenderer(size: size).image { context in
-            context.cgContext.translateBy(x: size.width / 2, y: size.height / 2)
-            context.cgContext.rotate(by: .pi / 2)
-            image.draw(in: CGRect(x: -image.size.width / 2, y: -image.size.height / 2,
-                                  width: image.size.width, height: image.size.height))
-        }
-        store.replaceImageFile(item.fileName, with: rotated)
+        store.replaceImageFile(item.fileName, with: image.rotatedClockwise())
         let sessionID = currentID
         store.updateTurn(sessionID, turnID) {
             if let i = $0.images.firstIndex(where: { $0.id == imageID }) {
@@ -184,7 +176,6 @@ final class ConversationController: ObservableObject {
         }
         Task { await process(sessionID, turnID) }
     }
-    #endif
 
     // MARK: 翻译
 
