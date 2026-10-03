@@ -14,3 +14,4 @@ DerivedData/
 # Secrets: API keys are entered in the app and stored in the Keychain, never in the repo
 .env
 *.local
+dist/
