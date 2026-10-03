@@ -52,11 +52,14 @@ final class Speaker: NSObject, ObservableObject, AVSpeechSynthesizerDelegate {
         }
     }
 
-    func play(_ speech: Speech) {
+    /// keepAudioSession：同声传译时一边收音一边朗读，不切换音频通道
+    func play(_ speech: Speech, keepAudioSession: Bool = false) {
         stop()
         #if os(iOS)
         // 静音开关打开时也能朗读
-        try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .spokenAudio)
+        if !keepAudioSession {
+            try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .spokenAudio)
+        }
         #endif
         playing = speech
         // 短的英文用真人发音，长段落和中文用系统语音

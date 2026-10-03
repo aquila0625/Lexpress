@@ -2,7 +2,7 @@ import SwiftUI
 
 /// 内容的种类，用来筛选，也决定每一轮长什么样
 enum TurnKind: CaseIterable {
-    case word, sentence, image, dialog
+    case word, sentence, image, dialog, transcript
 
     var title: String {
         switch self {
@@ -10,6 +10,7 @@ enum TurnKind: CaseIterable {
         case .sentence: "句子"
         case .image: "图片"
         case .dialog: "对话"
+        case .transcript: "传译"
         }
     }
 }
@@ -22,6 +23,7 @@ extension TurnKind {
         case .sentence: .lxSentenceCard
         case .image: .lxImageCard
         case .dialog: .lxDialogCard
+        case .transcript: .lxTranscriptCard
         }
     }
 
@@ -31,12 +33,14 @@ extension TurnKind {
         case .sentence: .lxSentenceInk
         case .image: .lxImageInk
         case .dialog: .lxDialogInk
+        case .transcript: .lxTranscriptInk
         }
     }
 }
 
 extension Turn {
     var kind: TurnKind {
+        if transcript != nil { return .transcript }
         if dialog != nil { return .dialog }
         if isImage { return .image }
         if word != nil { return .word }
@@ -75,7 +79,17 @@ struct TurnView: View {
     private var editing: Bool { editingTurn == turn.id }
 
     var body: some View {
-        if let dialog = turn.dialog {
+        if let transcript = turn.transcript {
+            TranscriptCard(lines: transcript, duration: turn.transcriptDuration, sourceIsChinese: turn.sourceIsChinese,
+                           date: turn.createdAt, expanded: expanded, onToggleExpand: onToggleExpand)
+                .contentShape(.rect)
+                .onTapGesture(perform: onSelect)
+                #if os(macOS)
+                .contextMenu {
+                    Button("删除这一轮", systemImage: "trash", role: .destructive) { onDelete() }
+                }
+                #endif
+        } else if let dialog = turn.dialog {
             DialogCard(lines: dialog, date: turn.createdAt)
                 .contentShape(.rect)
                 .onTapGesture(perform: onSelect)

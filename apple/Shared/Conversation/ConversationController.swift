@@ -122,6 +122,22 @@ final class ConversationController: ObservableObject {
         autoTitle(currentID, from: "面对面对话")
     }
 
+    // MARK: 同声传译
+
+    @Published var showInterpreter = false
+
+    /// 结束同传：整段字幕作为一轮保存
+    func saveTranscript(_ segments: [Interpreter.Segment], duration: TimeInterval, sourceIsChinese: Bool) {
+        let lines = segments.map { TranscriptLine(original: $0.original, translation: $0.translation ?? "") }
+        guard !lines.isEmpty else { return }
+        var turn = Turn(source: lines.map(\.original).joined(separator: "\n"), sourceIsChinese: sourceIsChinese)
+        turn.transcript = lines
+        turn.transcriptDuration = duration
+        turn.state = .done
+        store.appendTurn(turn, to: currentID)
+        autoTitle(currentID, from: "同声传译")
+    }
+
     // MARK: 语音输入
 
     /// 按翻译方向决定识别哪种语言；“自动”时用上次说的语言

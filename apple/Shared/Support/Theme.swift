@@ -20,6 +20,9 @@ extension Color {
     /// 面对面对话的卡片（浅青色）
     static let lxDialogCard = Color(light: 0xE6F5F4, dark: 0x0F2726)
     static let lxDialogInk = Color(light: 0x0B6B66, dark: 0x6FD3CC)
+    /// 同声传译记录的卡片（浅琥珀色）
+    static let lxTranscriptCard = Color(light: 0xFFF6E3, dark: 0x2A2210)
+    static let lxTranscriptInk = Color(light: 0x8A5A00, dark: 0xF2C14E)
 
     init(light: UInt32, dark: UInt32) {
         #if os(macOS)

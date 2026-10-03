@@ -1,0 +1,242 @@
+import SwiftUI
+
+/// 同声传译：听讲座、开会时用。持续收音，滚动显示双语字幕，上面原文、下面译文，正在说的那句是蓝底。
+/// 结束时整段字幕存成一条“传译记录”。
+struct InterpreterView: View {
+    @ObservedObject var controller: ConversationController
+    @StateObject private var interpreter: Interpreter
+    @Environment(\.dismiss) private var dismiss
+    @AppStorage("interpreter.sourceIsChinese") private var sourceIsChinese = false
+    /// 已经保存过（点了结束）；用其他方式关掉时也要保存
+    @State private var saved = false
+
+    init(controller: ConversationController) {
+        self.controller = controller
+        _interpreter = StateObject(wrappedValue: Interpreter { text, chinese in
+            await controller.translate(text, fromChinese: chinese)
+        })
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            topBar
+            subtitles
+            bottomBar
+        }
+        .background { WashBackground().ignoresSafeArea() }
+        .task { await interpreter.start(sourceIsChinese: sourceIsChinese) }
+        .onDisappear {
+            guard !saved else { return }
+            saved = true
+            Task {
+                await interpreter.stop()
+                save()
+            }
+        }
+        #if os(macOS)
+        .frame(minWidth: 560, minHeight: 720)
+        #endif
+    }
+
+    // MARK: 顶栏
+
+    private var topBar: some View {
+        HStack(spacing: 10) {
+            GlassIconButton(systemName: "xmark", label: "结束并保存") { finish() }
+            Button {
+                Task {
+                    await interpreter.switchDirection()
+                    sourceIsChinese = interpreter.sourceIsChinese
+                }
+            } label: {
+                HStack(spacing: 8) {
+                    if interpreter.state == .running {
+                        Circle().fill(Color.red).frame(width: 8, height: 8)
+                    }
+                    Text("同声传译 · " + (interpreter.sourceIsChinese ? "中 → 英" : "英 → 中"))
+                        .font(.callout.weight(.semibold))
+                    Image(systemName: "arrow.left.arrow.right").font(.caption.weight(.bold)).foregroundStyle(.secondary)
+                    TimelineView(.periodic(from: .now, by: 1)) { _ in
+                        Text(AudioReplayButton.format(interpreter.elapsed))
+                            .font(.callout.monospacedDigit())
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .padding(.horizontal, 14)
+                .frame(maxWidth: .infinity, minHeight: 44)
+                .contentShape(.capsule)
+            }
+            .buttonStyle(.plain)
+            .glassEffect(.regular.interactive(), in: .capsule)
+            .accessibilityLabel("翻译方向，点按切换")
+            GlassIconButton(systemName: interpreter.speakTranslations ? "headphones" : "speaker.slash",
+                            label: interpreter.speakTranslations ? "关闭耳机朗读" : "用耳机朗读译文",
+                            tint: interpreter.speakTranslations ? .lxAccent : .primary) {
+                interpreter.speakTranslations.toggle()
+                if !interpreter.speakTranslations { Speaker.shared.stop() }
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.top, 8)
+    }
+
+    // MARK: 字幕
+
+    private var subtitles: some View {
+        ScrollViewReader { proxy in
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 10) {
+                    ForEach(interpreter.segments) { segment in
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(segment.original)
+                                .font(.callout)
+                                .foregroundStyle(.secondary)
+                            if let translation = segment.translation {
+                                Text(translation)
+                                    .font(.system(size: 19, weight: .semibold))
+                            } else {
+                                ProgressView().controlSize(.small)
+                            }
+                        }
+                        .textSelection(.enabled)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .id(segment.id)
+                    }
+                    if !interpreter.live.isEmpty {
+                        Text(interpreter.live + "…")
+                            .font(.system(size: 18, weight: .medium))
+                            .padding(12)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(Color.lxAccentSoft, in: .rect(cornerRadius: 14))
+                            .id("live")
+                    }
+                    Color.clear.frame(height: 1).id("bottom")
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 12)
+            }
+            .overlay { statusOverlay }
+            .onChange(of: interpreter.segments.count) { withAnimation { proxy.scrollTo("bottom", anchor: .bottom) } }
+            .onChange(of: interpreter.live) { proxy.scrollTo("bottom", anchor: .bottom) }
+        }
+    }
+
+    @ViewBuilder
+    private var statusOverlay: some View {
+        switch interpreter.state {
+        case .preparing(let message):
+            ProgressView(message).padding(16).background(.regularMaterial, in: .rect(cornerRadius: 14))
+        case .failed(let message):
+            VStack(spacing: 12) {
+                Label(message, systemImage: "exclamationmark.triangle").multilineTextAlignment(.center)
+                Button("重试") { Task { await interpreter.start(sourceIsChinese: sourceIsChinese) } }
+                    .buttonStyle(.glassProminent)
+            }
+            .padding(20)
+        default:
+            if interpreter.segments.isEmpty, interpreter.live.isEmpty, interpreter.state == .running {
+                VStack(spacing: 8) {
+                    Image(systemName: "waveform").font(.largeTitle).foregroundStyle(Color.lxAccent)
+                    Text(interpreter.sourceIsChinese ? "正在听中文，说完一句就会翻译" : "正在听英语，说完一句就会翻译")
+                        .foregroundStyle(.secondary)
+                    Text((interpreter.engineName.isEmpty ? "" : interpreter.engineName + " · ") + "录音不上传")
+                        .font(.footnote).foregroundStyle(.tertiary)
+                }
+            }
+        }
+    }
+
+    // MARK: 底栏
+
+    private var bottomBar: some View {
+        HStack(spacing: 14) {
+            VoiceWave(levels: interpreter.levels)
+            Spacer(minLength: 0)
+            if interpreter.state == .running || interpreter.state == .paused {
+                GlassIconButton(systemName: interpreter.state == .paused ? "play.fill" : "pause.fill",
+                                label: interpreter.state == .paused ? "继续" : "暂停") {
+                    interpreter.state == .paused ? interpreter.resume() : interpreter.pause()
+                }
+            }
+            Button(action: finish) {
+                Image(systemName: "stop.fill")
+                    .font(.system(size: 22, weight: .bold))
+                    .foregroundStyle(.white)
+                    .frame(width: 64, height: 64)
+                    .background(Color.red, in: .circle)
+                    .shadow(color: .red.opacity(0.25), radius: 8)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("结束并保存")
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+    }
+
+    private func finish() {
+        guard !saved else { return }
+        saved = true
+        Task {
+            await interpreter.stop()
+            save()
+            dismiss()
+        }
+    }
+
+    private func save() {
+        controller.saveTranscript(interpreter.segments, duration: interpreter.elapsed,
+                                  sourceIsChinese: interpreter.sourceIsChinese)
+        Speaker.shared.stop()
+    }
+}
+
+/// 会话里保存的同传记录：先显示前几句，可以展开全部；可以复制全部字幕
+struct TranscriptCard: View {
+    let lines: [TranscriptLine]
+    let duration: Double?
+    let sourceIsChinese: Bool
+    let date: Date
+    let expanded: Bool
+    let onToggleExpand: () -> Void
+
+    private var shown: [TranscriptLine] { expanded ? lines : Array(lines.prefix(3)) }
+
+    private var allText: String {
+        lines.map { $0.original + "\n" + $0.translation }.joined(separator: "\n\n")
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                Label("同声传译 · \(lines.count) 句" + (duration.map { " · " + AudioReplayButton.format($0) } ?? "")
+                      + " · " + (sourceIsChinese ? "中 → 英" : "英 → 中"), systemImage: "captions.bubble.fill")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(Color.lxTranscriptInk)
+                Spacer(minLength: 0)
+                CopyButton(text: allText, label: "复制全部字幕", title: "复制全部")
+            }
+            ForEach(shown) { line in
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(line.original).font(.footnote).foregroundStyle(.secondary)
+                    Text(line.translation).font(.system(size: 16, weight: .medium))
+                }
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            if lines.count > 3 {
+                Button(action: onToggleExpand) {
+                    Label(expanded ? "收起" : "展开全部 \(lines.count) 句", systemImage: expanded ? "chevron.up" : "chevron.down")
+                        .font(.footnote.weight(.semibold))
+                        .frame(minHeight: 32)
+                        .contentShape(.rect)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(Color.lxTranscriptInk)
+            }
+        }
+        .padding(12)
+        .background(Color.lxTranscriptCard, in: .rect(cornerRadius: 18))
+    }
+}
