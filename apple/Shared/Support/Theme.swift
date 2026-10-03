@@ -17,6 +17,9 @@ extension Color {
     /// 和卡片底色配套的深色：用于筛选按钮的文字和选中时的底色
     static let lxSentenceInk = Color(light: 0x1E7A45, dark: 0x7FD6A3)
     static let lxImageInk = Color(light: 0x4A5565, dark: 0xAEB8C4)
+    /// 面对面对话的卡片（浅青色）
+    static let lxDialogCard = Color(light: 0xE6F5F4, dark: 0x0F2726)
+    static let lxDialogInk = Color(light: 0x0B6B66, dark: 0x6FD3CC)
 
     init(light: UInt32, dark: UInt32) {
         #if os(macOS)

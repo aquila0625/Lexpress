@@ -262,6 +262,15 @@ struct ConversationView: View {
             ReplyView(received: item.result.source, receivedTranslation: item.result.displayed)
         }
         #if os(iOS)
+        .fullScreenCover(isPresented: $controller.showFaceToFace) {
+            FaceToFaceView(controller: controller)
+        }
+        #else
+        .sheet(isPresented: $controller.showFaceToFace) {
+            FaceToFaceView(controller: controller)
+        }
+        #endif
+        #if os(iOS)
         .fullScreenCover(item: $editingImage) { ref in
             ImageEditView(controller: controller, store: store, turnID: ref.turnID, imageID: ref.imageID)
         }
@@ -395,6 +404,7 @@ private func deleteTitle(_ turn: Turn) -> String {
     case .word: "删除单词“\(turn.word?.word ?? turn.source)”？"
     case .image: "删除这 \(turn.images.count) 张图片和译文？"
     case .sentence: "删除这句话和它的译文？"
+    case .dialog: "删除这段面对面对话（\(turn.dialog?.count ?? 0) 句）？"
     }
 }
 
@@ -519,7 +529,7 @@ struct OutlineList: View {
     }
 
     private func meta(_ turn: Turn) -> String {
-        let kind = turn.isImage ? "图片" : (turn.word != nil ? "单词" : (turn.sourceIsChinese ? "中文" : "英文"))
+        let kind = turn.dialog != nil ? "对话" : turn.isImage ? "图片" : (turn.word != nil ? "单词" : (turn.sourceIsChinese ? "中文" : "英文"))
         return kind + " · " + turn.createdAt.formatted(date: .omitted, time: .shortened)
     }
 }

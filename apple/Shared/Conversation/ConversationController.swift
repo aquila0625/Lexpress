@@ -102,6 +102,26 @@ final class ConversationController: ObservableObject {
 
     // MARK: 发送
 
+    // MARK: 面对面对话
+
+    /// 打开面对面对话（全屏）
+    @Published var showFaceToFace = false
+
+    /// 按已知的语言翻译一句（面对面对话用），先本机离线，不行再在线
+    func translate(_ text: String, fromChinese: Bool) async -> String? {
+        try? await translateSentence(text, chinese: fromChinese).0
+    }
+
+    /// 结束面对面对话：整段作为一轮保存到当前会话
+    func saveDialog(_ lines: [DialogLine]) {
+        guard !lines.isEmpty else { return }
+        var turn = Turn(source: lines.map(\.original).joined(separator: "\n"), sourceIsChinese: lines[0].originalIsChinese)
+        turn.dialog = lines
+        turn.state = .done
+        store.appendTurn(turn, to: currentID)
+        autoTitle(currentID, from: "面对面对话")
+    }
+
     // MARK: 语音输入
 
     /// 按翻译方向决定识别哪种语言；“自动”时用上次说的语言

@@ -49,6 +49,17 @@ enum TurnState: String, Codable {
     case working, done, failed
 }
 
+/// 面对面对话里的一句：谁说的、原话、译文
+struct DialogLine: Codable, Identifiable, Equatable {
+    var id = UUID()
+    /// true 是我说的，false 是对方说的
+    var isMine: Bool
+    var original: String
+    var translation: String
+    var originalIsChinese: Bool
+    var createdAt = Date()
+}
+
 /// 会话里的一轮：一次输入（文字或几张图片）和它的翻译结果
 struct Turn: Codable, Identifiable {
     var id = UUID()
@@ -70,11 +81,14 @@ struct Turn: Codable, Identifiable {
     /// 语音输入时录下的原声（文件名）和时长
     var audioFile: String?
     var audioDuration: Double?
+    /// 面对面对话：整段对话作为一轮保存
+    var dialog: [DialogLine]?
 
     var isImage: Bool { !images.isEmpty }
 
     /// 原文目录里显示的那一行
     var outlineText: String {
+        if let dialog { return "面对面对话 · \(dialog.count) 句：" + (dialog.first?.original ?? "") }
         if isImage {
             let parts = images.map { String($0.recognized.prefix(24)) }.filter { !$0.isEmpty }
             return "\(images.count) 张图片" + (parts.isEmpty ? "" : "：" + parts.joined(separator: " / "))
@@ -86,6 +100,7 @@ struct Turn: Codable, Identifiable {
     var searchableText: String {
         [source, sentence?.translation ?? "", word?.summary ?? ""].joined(separator: "\n")
             + images.map { $0.recognized + "\n" + $0.translation }.joined(separator: "\n")
+            + (dialog ?? []).map { $0.original + "\n" + $0.translation }.joined(separator: "\n")
     }
 }
 

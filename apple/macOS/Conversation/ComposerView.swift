@@ -82,6 +82,8 @@ struct ComposerView: View {
                 Menu {
                     Button("选择图片…（可多选）", systemImage: "photo.on.rectangle") { showFiles = true }
                     Button("粘贴剪贴板", systemImage: "doc.on.clipboard") { paste() }
+                    Divider()
+                    Button("面对面对话", systemImage: "person.2") { controller.showFaceToFace = true }
                 } label: {
                     Image(systemName: "plus")
                         .font(.system(size: 15, weight: .medium))

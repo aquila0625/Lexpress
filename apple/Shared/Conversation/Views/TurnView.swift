@@ -2,13 +2,14 @@ import SwiftUI
 
 /// 内容的种类，用来筛选，也决定每一轮长什么样
 enum TurnKind: CaseIterable {
-    case word, sentence, image
+    case word, sentence, image, dialog
 
     var title: String {
         switch self {
         case .word: "单词"
         case .sentence: "句子"
         case .image: "图片"
+        case .dialog: "对话"
         }
     }
 }
@@ -20,6 +21,7 @@ extension TurnKind {
         case .word: .lxSurface
         case .sentence: .lxSentenceCard
         case .image: .lxImageCard
+        case .dialog: .lxDialogCard
         }
     }
 
@@ -28,12 +30,14 @@ extension TurnKind {
         case .word: .lxAccent
         case .sentence: .lxSentenceInk
         case .image: .lxImageInk
+        case .dialog: .lxDialogInk
         }
     }
 }
 
 extension Turn {
     var kind: TurnKind {
+        if dialog != nil { return .dialog }
         if isImage { return .image }
         if word != nil { return .word }
         return .sentence
@@ -71,7 +75,16 @@ struct TurnView: View {
     private var editing: Bool { editingTurn == turn.id }
 
     var body: some View {
-        if turn.isImage || turn.word != nil {
+        if let dialog = turn.dialog {
+            DialogCard(lines: dialog, date: turn.createdAt)
+                .contentShape(.rect)
+                .onTapGesture(perform: onSelect)
+                #if os(macOS)
+                .contextMenu {
+                    Button("删除这一轮", systemImage: "trash", role: .destructive) { onDelete() }
+                }
+                #endif
+        } else if turn.isImage || turn.word != nil {
             VStack(alignment: .leading, spacing: 6) {
                 // 单词直接显示成词卡，不再重复一个原文气泡
                 if turn.isImage { imageSource }
