@@ -130,4 +130,6 @@ final class Speaker: NSObject, ObservableObject, AVSpeechSynthesizerDelegate {
 enum SettingsKey {
     static let accent = "speech.accent"
     static let autoSpeak = "speech.autoSpeak"
+    /// 在译文下面显示这次 AI 用了多少 token（默认不显示，用量报表里都有）
+    static let showAIUsage = "ai.showUsage"
 }

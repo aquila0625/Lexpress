@@ -149,6 +149,8 @@ private fun SettingsMain(onReport: () -> Unit) {
         )
         SettingRow("AI 优化：新会话默认开启") { Switch(AISettings.autoCalibrate, { AISettings.updateAutoCalibrate(it) }) }
         Divider()
+        SettingRow("在译文下显示每次消耗的 token") { Switch(Prefs.showAIUsage, { Prefs.updateShowAIUsage(it) }) }
+        Divider()
         SettingRow("测试连接", value = testResult, enabled = !testing && AISettings.isConfigured, onClick = {
             testing = true
             testResult = null
@@ -179,7 +181,7 @@ private fun SettingsMain(onReport: () -> Unit) {
     Footnote(
         "Q-Translator 不提供 AI 额度，也不经过任何中间服务器：你自己在服务商那里注册，把 API Key 填在这里，费用由服务商向你收取。" +
             "Key 只加密保存在本机。注意 ChatGPT 的会员订阅不包含 API 额度，API Key 要在 OpenAI 开发者平台单独申请。" +
-            "不填也能使用词典、翻译、朗读和图片翻译。每次 AI 优化后会显示消耗的 token 数。"
+            "不填也能使用词典、翻译、朗读和图片翻译。单词和短语只查词典，不用 AI。token 用量默认不显示在译文下面，可以在用量报表里查看。"
     )
 
     Group("朗读") {

@@ -5,7 +5,7 @@ enum DrawerAction {
 }
 
 /// 抽屉：搜索、生词本和编辑，两层的场景和会话列表，底部是设置和新建。
-/// 平时长按会话就能拖到别的位置或别的场景；点“编辑”出现拖动把手。
+/// 平时长按会话就能拖着排序或换场景，其它行实时让位；点“编辑”出现拖动把手。
 struct DrawerView: View {
     @ObservedObject var controller: ConversationController
     @ObservedObject var store: ConversationStore
@@ -25,6 +25,17 @@ struct DrawerView: View {
     /// 左滑露出删除按钮的那一行（同一时间只开一行）
     @State private var swipedRow: String?
     @State private var deletingScene: SceneGroup?
+    #if os(iOS)
+    // 长按拖动排序：被拖的那一行浮起来跟着手指走，其它行实时让位
+    @State private var frames = RowFrames()
+    @State private var dragID: UUID?
+    @State private var dragPoint: CGPoint = .zero
+    @State private var grabOffset: CGFloat = 0
+    @State private var dragEndedAt = Date.distantPast
+    /// 拖动中换过场景：松手后重建一次列表（懒加载列表里跨分组移动的行有时不重绘）
+    @State private var draggedAcrossScenes = false
+    @State private var listToken = 0
+    #endif
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -74,6 +85,22 @@ struct DrawerView: View {
                             searchResults
                         }
                     }
+                    #if os(iOS)
+                    .id(listToken)
+                    .coordinateSpace(.named("drawerList"))
+                    .overlay(alignment: .topLeading) {
+                        if let id = dragID, let session = store.session(id) {
+                            sessionLabel(session, snippet: nil)
+                                .background(Color.lxBackground, in: .rect(cornerRadius: 14))
+                                .overlay { RoundedRectangle(cornerRadius: 14).stroke(Color.lxAccent.opacity(0.5), lineWidth: 1.5) }
+                                .shadow(color: .black.opacity(0.18), radius: 14, y: 6)
+                                .scaleEffect(1.03)
+                                .offset(y: dragPoint.y - grabOffset)
+                                .allowsHitTesting(false)
+                        }
+                    }
+                    .gesture(LongPressDrag(onBegan: beginDrag, onChanged: moveDrag, onEnded: endDrag))
+                    #endif
                 }
                 .scrollIndicators(.hidden)
             }
@@ -145,16 +172,21 @@ struct DrawerView: View {
                 ForEach(sessions) { sessionRow($0) }
                 if sessions.isEmpty {
                     // 空场景也能把会话拖进来
-                    Text(armedScene == key(scene) ? "松手放进“\(scene.name)”" : "还没有会话，点右边的 + 新建，或把会话拖到这里")
+                    Text(armedScene == key(scene) ? "松手放进“\(scene.name)”" : "还没有会话。点右边的新建按钮，或把会话拖到这里")
                         .font(.footnote)
                         .foregroundStyle(armedScene == key(scene) ? Color.lxAccent : .secondary)
-                        .frame(maxWidth: .infinity, minHeight: 52, alignment: .leading)
+                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
                         .padding(.leading, 18)
                         .background(armedScene == key(scene) ? Color.lxAccentSoft : Color.clear, in: .rect(cornerRadius: 14))
                         .contentShape(.rect)
+                        #if os(iOS)
+                        .onGeometryChange(for: CGRect.self) { $0.frame(in: .named("drawerList")) } action: { frames.zones["e-" + key(scene)] = $0 }
+                        .onDisappear { frames.zones["e-" + key(scene)] = nil }
+                        #else
                         .dropDestination(for: String.self) { items, _ in
                             drop(items, into: scene, before: nil)
                         } isTargeted: { hover(scene, $0) }
+                        #endif
                 }
             }
         } header: {
@@ -188,9 +220,14 @@ struct DrawerView: View {
                 }
                 .padding(.top, 16)
                 .contentShape(.rect)
+                #if os(iOS)
+                .onGeometryChange(for: CGRect.self) { $0.frame(in: .named("drawerList")) } action: { frames.zones["none"] = $0 }
+                .onDisappear { frames.zones["none"] = nil }
+                #else
                 .dropDestination(for: String.self) { items, _ in
                     drop(items, into: nil, before: nil)
                 } isTargeted: { hover(nil, $0) }
+                #endif
         }
     }
 
@@ -226,107 +263,150 @@ struct DrawerView: View {
         }
     }
 
-    /// 场景标题：点左边展开或收起；右边是“在这个场景里新建会话”和“编辑场景”。往上滑时吸在顶部。
+    /// 场景标题：比会话行矮、颜色淡，不抢会话的注意力。右边依次是新建会话、编辑场景、展开收起。往上滑时吸在顶部。
     private func sceneHeader(_ scene: SceneGroup, count: Int, collapsed: Bool) -> some View {
         let armed = armedScene == key(scene)
         return SwipeToDelete(id: "h-" + key(scene), openRow: $swipedRow, onDelete: { deletingScene = scene }) {
             sceneHeaderContent(scene, count: count, collapsed: collapsed, armed: armed)
         }
-        .padding(.top, 4)
+        .padding(.top, 6)
+        .padding(.bottom, 2)
+        .background(Color.lxBackground)
+        #if os(iOS)
+        .onGeometryChange(for: CGRect.self) { $0.frame(in: .named("drawerList")) } action: { frames.zones["h-" + key(scene)] = $0 }
+        .onDisappear { frames.zones["h-" + key(scene)] = nil }
+        #else
         // 把会话拖到场景标题上：移到这个场景的最上面
         .dropDestination(for: String.self) { items, _ in
             drop(items, into: scene, before: nil)
         } isTargeted: { hover(scene, $0) }
+        #endif
     }
 
     private func sceneHeaderContent(_ scene: SceneGroup, count: Int, collapsed: Bool, armed: Bool) -> some View {
-        HStack(spacing: 4) {
-            Button {
-                if swipedRow != nil { swipedRow = nil; return }
-                withAnimation(.snappy) { setCollapsed(scene, !collapsed) }
-            } label: {
-                HStack(spacing: 10) {
-                    SceneCoverView(cover: scene.cover)
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text(scene.name).font(.callout.weight(.bold)).lineLimit(1)
-                        Text(armed ? "松手放进这个场景" : "\(count) 个会话")
-                            .font(.caption)
-                            .foregroundStyle(armed ? Color.lxAccent : .secondary)
-                    }
-                    Image(systemName: collapsed ? "chevron.right" : "chevron.down")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
+        let toggle = {
+            if swipedRow != nil { swipedRow = nil; return }
+            withAnimation(.snappy) { setCollapsed(scene, !collapsed) }
+        }
+        return HStack(spacing: 0) {
+            Button(action: toggle) {
+                HStack(spacing: 8) {
+                    SceneCoverView(cover: scene.cover, size: 26)
+                    Text(scene.name).font(.subheadline.weight(.semibold)).lineLimit(1)
+                    Text(armed ? "松手放进来" : "\(count)")
+                        .font(.caption)
+                        .foregroundStyle(armed ? Color.lxAccent : .secondary)
                     Spacer(minLength: 0)
                 }
-                .frame(minHeight: 56)
+                .frame(minHeight: 44)
                 .contentShape(.rect)
             }
             .buttonStyle(.plain)
+            .accessibilityLabel("\(scene.name)，\(count) 个会话")
             .accessibilityHint(collapsed ? "展开" : "收起")
 
             Button {
                 controller.newSession(sceneID: scene.id)
                 onSelect()
             } label: {
-                Image(systemName: "plus").frame(width: 40, height: 44)
+                Image(systemName: "square.and.pencil").font(.footnote.weight(.medium)).frame(width: 38, height: 44).contentShape(.rect)
             }
-            .buttonStyle(.borderless)
+            .buttonStyle(.plain)
             .accessibilityLabel("在\(scene.name)里新建会话")
 
             Button { onAction(.editScene(scene.id)) } label: {
-                Image(systemName: "ellipsis").frame(width: 40, height: 44)
+                Image(systemName: "slider.horizontal.3").font(.footnote.weight(.medium)).frame(width: 38, height: 44).contentShape(.rect)
             }
-            .buttonStyle(.borderless)
-            .accessibilityLabel("编辑场景\(scene.name)")
+            .buttonStyle(.plain)
+            .accessibilityLabel("编辑场景\(scene.name)的名称和图标")
+
+            Button(action: toggle) {
+                Image(systemName: "chevron.down")
+                    .font(.caption.weight(.semibold))
+                    .rotationEffect(.degrees(collapsed ? -90 : 0))
+                    .frame(width: 34, height: 44)
+                    .contentShape(.rect)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(collapsed ? "展开" : "收起")
         }
-        .padding(.horizontal, 6)
+        .foregroundStyle(.secondary)
+        .padding(.leading, 8)
+        .padding(.trailing, 2)
+        #if os(macOS)
         .contextMenu {
-            Button("在这个场景里新建会话", systemImage: "plus") {
+            Button("在这个场景里新建会话", systemImage: "square.and.pencil") {
                 controller.newSession(sceneID: scene.id)
                 onSelect()
             }
-            Button("编辑场景", systemImage: "pencil") { onAction(.editScene(scene.id)) }
+            Button("编辑场景", systemImage: "slider.horizontal.3") { onAction(.editScene(scene.id)) }
             Button("删除场景…", systemImage: "trash", role: .destructive) { deletingScene = scene }
         }
-        // 淡淡的底色，和下面的会话区分开
-        .background(armed ? Color.lxAccentSoft : Color.lxSurface, in: .rect(cornerRadius: 14))
+        #endif
+        // 很淡的底色，和下面的会话区分开
+        .background(armed ? Color.lxAccentSoft : Color.lxSurface.opacity(0.7), in: .rect(cornerRadius: 12))
         .overlay {
-            if armed { RoundedRectangle(cornerRadius: 14).stroke(Color.lxAccent, lineWidth: 2) }
+            if armed { RoundedRectangle(cornerRadius: 12).stroke(Color.lxAccent, lineWidth: 2) }
         }
         .contentShape(.rect)
     }
 
     private func sessionRow(_ session: ChatSession, snippet: String? = nil) -> some View {
+        #if os(iOS)
+        ZStack {
+            if dragID == session.id {
+                // 被拖走的那一行在列表里留一个空位，浮起来的那份跟着手指走
+                Color.clear.frame(height: 50)
+            } else {
+                SwipeToDelete(id: "s-" + session.id.uuidString, openRow: $swipedRow, onDelete: { deleting = session }) {
+                    sessionRowContent(session, snippet: snippet)
+                }
+                .transition(.identity)
+            }
+        }
+        .onGeometryChange(for: CGRect.self) { $0.frame(in: .named("drawerList")) } action: { frames.sessions[session.id] = $0 }
+        .onDisappear { frames.sessions[session.id] = nil }
+        #else
         SwipeToDelete(id: "s-" + session.id.uuidString, openRow: $swipedRow, onDelete: { deleting = session }) {
             sessionRowContent(session, snippet: snippet)
         }
+        #endif
+    }
+
+    private func sessionLabel(_ session: ChatSession, snippet: String?) -> some View {
+        HStack(spacing: 8) {
+            VStack(alignment: .leading, spacing: 1) {
+                Text(session.title).font(.callout.weight(.semibold)).lineLimit(1)
+                Text(snippet ?? session.lastSnippet).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+            }
+            Spacer(minLength: 4)
+            Text(session.updatedAt.formatted(.relative(presentation: .named)))
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+        .padding(.leading, 18)
+        .padding(.trailing, 10)
+        .frame(minHeight: 50)
+        .background(rowBackground(session), in: .rect(cornerRadius: 14))
     }
 
     private func sessionRowContent(_ session: ChatSession, snippet: String?) -> some View {
         Button {
             if swipedRow != nil { swipedRow = nil; return }
+            #if os(iOS)
+            // 刚拖完松手，不算点按
+            if Date().timeIntervalSince(dragEndedAt) < 0.4 { return }
+            #endif
             controller.select(session.id)
             onSelect()
         } label: {
-            HStack(spacing: 8) {
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(session.title).font(.callout.weight(.semibold)).lineLimit(1)
-                    Text(snippet ?? session.lastSnippet).font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                }
-                Spacer(minLength: 4)
-                Text(session.updatedAt.formatted(.relative(presentation: .named)))
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-            }
-            .padding(.leading, 18)
-            .padding(.trailing, 10)
-            .frame(minHeight: 50)
-            .background(rowBackground(session), in: .rect(cornerRadius: 14))
-            .background(Color.lxBackground, in: .rect(cornerRadius: 14))
-            .contentShape(.rect)
+            sessionLabel(session, snippet: snippet)
+                .background(Color.lxBackground, in: .rect(cornerRadius: 14))
+                .contentShape(.rect)
         }
         .buttonStyle(.plain)
-        // 长按拖动：放到另一个会话上就排在它前面，并进入它所在的场景
+        #if os(macOS)
+        // 拖动：放到另一个会话上就排在它前面，并进入它所在的场景
         .draggable(session.id.uuidString) {
             Text(session.title)
                 .font(.callout.weight(.semibold))
@@ -353,7 +433,76 @@ struct DrawerView: View {
             }
             Button("删除", systemImage: "trash", role: .destructive) { deleting = session }
         }
+        #endif
     }
+
+    #if os(iOS)
+    // MARK: 长按拖动（iOS）
+
+    private func beginDrag(_ point: CGPoint) {
+        // 吸顶的场景标题盖在会话上面，按在标题上不算
+        guard query.trimmed.isEmpty, !frames.zones.contains(where: { $0.key.hasPrefix("h-") && $0.value.contains(point) }),
+              let hit = frames.sessions.first(where: { $0.value.contains(point) && store.session($0.key) != nil }) else { return }
+        swipedRow = nil
+        grabOffset = point.y - hit.value.minY
+        dragPoint = point
+        draggedAcrossScenes = false
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        withAnimation(.snappy(duration: 0.2)) { dragID = hit.key }
+    }
+
+    private func moveDrag(_ point: CGPoint) {
+        guard let id = dragID, let dragged = store.session(id) else { return }
+        dragPoint = point
+        // 拖到场景标题或空场景上：放进这个场景的最上面
+        for scene in store.scenes {
+            let k = key(scene)
+            if frames.zones["h-" + k]?.contains(point) == true || frames.zones["e-" + k]?.contains(point) == true {
+                if dragged.sceneID != scene.id {
+                    draggedAcrossScenes = true
+                    withAnimation(.snappy) {
+                        store.moveSession(id, toScene: scene.id, before: nil)
+                        setCollapsed(scene, false)
+                    }
+                    UISelectionFeedbackGenerator().selectionChanged()
+                }
+                return
+            }
+        }
+        if frames.zones["none"]?.contains(point) == true {
+            if dragged.sceneID != nil {
+                draggedAcrossScenes = true
+                withAnimation(.snappy) { store.moveSession(id, toScene: nil, before: nil) }
+            }
+            return
+        }
+        // 拖过另一个会话：和它换位置，并进入它所在的场景
+        guard let mine = frames.sessions[id],
+              let hit = frames.sessions.first(where: { $0.key != id && $0.value.contains(point) }),
+              let other = store.session(hit.key) else { return }
+        if other.sceneID != dragged.sceneID { draggedAcrossScenes = true }
+        withAnimation(.snappy) {
+            if mine.minY < hit.value.minY {
+                store.moveSession(id, toScene: other.sceneID, after: other.id)
+            } else {
+                store.moveSession(id, toScene: other.sceneID, before: other.id)
+            }
+        }
+        UISelectionFeedbackGenerator().selectionChanged()
+    }
+
+    private func endDrag() {
+        guard dragID != nil else { return }
+        dragEndedAt = Date()
+        if draggedAcrossScenes {
+            dragID = nil
+            frames.sessions = [:]
+            listToken += 1
+        } else {
+            withAnimation(.snappy(duration: 0.2)) { dragID = nil }
+        }
+    }
+    #endif
 
     private func rowBackground(_ session: ChatSession) -> Color {
         if dropTarget == "s-" + session.id.uuidString { return Color.lxAccentSoft.opacity(0.6) }
@@ -624,6 +773,47 @@ struct DeleteSceneSheet: View {
 }
 
 #if os(iOS)
+/// 列表里各行的位置（相对列表内容），拖动时用来判断手指在哪一行上。不触发界面刷新。
+final class RowFrames {
+    var sessions: [UUID: CGRect] = [:]
+    /// "h-场景"：场景标题；"e-场景"：空场景的提示；"none"：移出场景的虚线框
+    var zones: [String: CGRect] = [:]
+}
+
+/// 长按后拖动。长按没成立之前手指一动就交给列表滚动
+struct LongPressDrag: UIGestureRecognizerRepresentable {
+    let onBegan: (CGPoint) -> Void
+    let onChanged: (CGPoint) -> Void
+    let onEnded: () -> Void
+
+    func makeUIGestureRecognizer(context: Context) -> UILongPressGestureRecognizer {
+        let recognizer = UILongPressGestureRecognizer()
+        recognizer.minimumPressDuration = 0.3
+        recognizer.delegate = context.coordinator
+        return recognizer
+    }
+
+    func makeCoordinator(converter: CoordinateSpaceConverter) -> Coordinator { Coordinator() }
+
+    final class Coordinator: NSObject, UIGestureRecognizerDelegate {
+        // 和行上的点按并存；但不和滚动、左滑同时进行
+        func gestureRecognizer(_ recognizer: UIGestureRecognizer,
+                               shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool {
+            !(other is UIPanGestureRecognizer)
+        }
+    }
+
+    func handleUIGestureRecognizerAction(_ recognizer: UILongPressGestureRecognizer, context: Context) {
+        let point = context.converter.localLocation
+        switch recognizer.state {
+        case .began: onBegan(point)
+        case .changed: onChanged(point)
+        case .ended, .cancelled, .failed: onEnded()
+        default: break
+        }
+    }
+}
+
 /// 只在横向滑动时才开始的拖动手势（UIKit 的 pan），竖着滑仍然交给列表滚动
 struct HorizontalPan: UIGestureRecognizerRepresentable {
     let onChange: (CGFloat) -> Void

@@ -24,6 +24,7 @@ object Prefs {
         store = context.getSharedPreferences("settings", Context.MODE_PRIVATE)
         accent = store.getInt("accent", 2)
         autoSpeak = store.getBoolean("autoSpeak", false)
+        showAIUsage = store.getBoolean("showAIUsage", false)
     }
 
     /** 默认英文口音：1 英音，2 美音 */
@@ -32,6 +33,15 @@ object Prefs {
 
     var autoSpeak by mutableStateOf(false)
         private set
+
+    /** 在译文下面显示这次 AI 用了多少 token（默认不显示，用量报表里都有） */
+    var showAIUsage by mutableStateOf(false)
+        private set
+
+    fun updateShowAIUsage(value: Boolean) {
+        showAIUsage = value
+        store.edit().putBoolean("showAIUsage", value).apply()
+    }
 
     fun updateAccent(value: Int) {
         accent = value

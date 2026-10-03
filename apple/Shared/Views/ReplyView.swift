@@ -17,6 +17,7 @@ struct ReplyView: View {
     @State private var showFullReceived = false
     /// 生成这条回复时用的服务商和模型
     @State private var usedModel = ""
+    @AppStorage(SettingsKey.showAIUsage) private var showUsage = false
     @FocusState private var inputFocused: Bool
 
     var body: some View {
@@ -112,7 +113,7 @@ struct ReplyView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(Color.lxAISoft, in: .rect(cornerRadius: 18))
 
-        if let usage = reply.usage {
+        if showUsage, let usage = reply.usage {
             Text(usedModel + " · " + usage.summary)
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(Color.lxAI)

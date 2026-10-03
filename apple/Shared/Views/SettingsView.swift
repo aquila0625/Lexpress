@@ -5,6 +5,7 @@ struct SettingsView: View {
     @ObservedObject private var ai = AISettings.shared
     @AppStorage(SettingsKey.accent) private var accent = 2
     @AppStorage(SettingsKey.autoSpeak) private var autoSpeak = false
+    @AppStorage(SettingsKey.showAIUsage) private var showUsage = false
 
     @ObservedObject private var usage = UsageStore.shared
     @State private var testing = false
@@ -42,6 +43,7 @@ struct SettingsView: View {
                     TextField("或手动填写模型名称", text: $ai.model)
                         .autocorrectionDisabled()
                     Toggle("AI 优化：翻译句子后自动优化译文", isOn: $ai.autoCalibrate)
+                    Toggle("在译文下显示每次消耗的 token", isOn: $showUsage)
                     Button {
                         test()
                     } label: {
@@ -67,7 +69,7 @@ struct SettingsView: View {
                 } header: {
                     Text("AI 增强（可选）")
                 } footer: {
-                    Text("Q-Translator 不提供 AI 额度，也不经过任何中间服务器：你自己在服务商那里注册，把 API Key 填在这里，费用由服务商向你收取。Key 只保存在本机钥匙串。注意 ChatGPT 的会员订阅不包含 API 额度，API Key 要在 OpenAI 开发者平台单独申请。不填也能使用词典、翻译、朗读和图片翻译。AI 用于优化句子翻译和帮你写回复；上面的开关关闭时不会自动优化，只有你点“AI 优化”才会运行。每次优化后会显示消耗的 token 数。")
+                    Text("Q-Translator 不提供 AI 额度，也不经过任何中间服务器：你自己在服务商那里注册，把 API Key 填在这里，费用由服务商向你收取。Key 只保存在本机钥匙串。注意 ChatGPT 的会员订阅不包含 API 额度，API Key 要在 OpenAI 开发者平台单独申请。不填也能使用词典、翻译、朗读和图片翻译。AI 用于优化句子翻译和帮你写回复；上面的开关关闭时不会自动优化，只有你点“AI 优化”才会运行。单词和短语只查词典，不用 AI。token 用量默认不显示在译文下面，可以在用量报表里查看。")
                 }
 
                 Section("朗读") {

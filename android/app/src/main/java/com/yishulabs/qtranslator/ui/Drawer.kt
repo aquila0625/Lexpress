@@ -38,6 +38,8 @@ import androidx.compose.material.icons.rounded.MoreHoriz
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.StarBorder
+import androidx.compose.material.icons.rounded.Tune
+import androidx.compose.ui.draw.rotate
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
@@ -278,26 +280,34 @@ private fun SceneHeader(
     val colors = Lx.colors
     Box(Modifier.background(colors.background).padding(top = 6.dp)) {
         SwipeToDelete(onDelete) {
-            // 淡淡的底色，和下面的会话区分开
+            // 比会话行矮、颜色淡，不抢会话的注意力；右边依次是新建会话、编辑场景、展开收起
             Row(
-                Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(colors.surface)
-                    .clickable(onClick = onToggle).defaultMinSize(minHeight = 56.dp).padding(start = 8.dp),
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(colors.surface.copy(alpha = 0.7f))
+                    .clickable(onClick = onToggle).defaultMinSize(minHeight = 44.dp).padding(start = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                SceneCoverView(scene.cover)
-                Spacer(Modifier.width(10.dp))
-                Column(Modifier.weight(1f)) {
-                    Text(scene.name, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = colors.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Text("$count 个会话", fontSize = 12.sp, color = colors.ink3)
-                }
+                SceneCoverView(scene.cover, 26.dp)
+                Spacer(Modifier.width(8.dp))
+                Text(scene.name, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = colors.ink2, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false))
+                Spacer(Modifier.width(6.dp))
+                Text("$count", fontSize = 12.sp, color = colors.ink3)
+                Spacer(Modifier.weight(1f))
                 if (editing) {
-                    IconButton(onClick = { controller.store.moveScene(scene.id, up = true) }) { Icon(Icons.Rounded.KeyboardArrowUp, "上移", tint = colors.ink2) }
-                    IconButton(onClick = { controller.store.moveScene(scene.id, up = false) }) { Icon(Icons.Rounded.KeyboardArrowDown, "下移", tint = colors.ink2) }
-                    IconButton(onClick = onEdit) { Icon(Icons.Rounded.Edit, "编辑场景", tint = colors.ink2) }
+                    IconButton(onClick = { controller.store.moveScene(scene.id, up = true) }) { Icon(Icons.Rounded.KeyboardArrowUp, "上移", tint = colors.ink3) }
+                    IconButton(onClick = { controller.store.moveScene(scene.id, up = false) }) { Icon(Icons.Rounded.KeyboardArrowDown, "下移", tint = colors.ink3) }
+                    IconButton(onClick = onEdit) { Icon(Icons.Rounded.Tune, "编辑场景", tint = colors.ink3) }
                 } else {
-                    Icon(if (collapsed) Icons.Rounded.ChevronRight else Icons.Rounded.ExpandMore, null, tint = colors.ink3, modifier = Modifier.size(18.dp))
-                    IconButton(onClick = onNewSession) { Icon(Icons.Rounded.Add, "在${scene.name}里新建会话", tint = colors.accent) }
-                    IconButton(onClick = onEdit) { Icon(Icons.Rounded.MoreHoriz, "编辑场景${scene.name}", tint = colors.accent) }
+                    IconButton(onClick = onNewSession, modifier = Modifier.size(40.dp)) {
+                        Icon(Icons.Rounded.EditNote, "在${scene.name}里新建会话", tint = colors.ink3, modifier = Modifier.size(20.dp))
+                    }
+                    IconButton(onClick = onEdit, modifier = Modifier.size(40.dp)) {
+                        Icon(Icons.Rounded.Tune, "编辑场景${scene.name}", tint = colors.ink3, modifier = Modifier.size(18.dp))
+                    }
+                    Icon(
+                        Icons.Rounded.ExpandMore, if (collapsed) "展开" else "收起", tint = colors.ink3,
+                        modifier = Modifier.padding(end = 10.dp).size(20.dp).rotate(if (collapsed) -90f else 0f),
+                    )
                 }
             }
         }

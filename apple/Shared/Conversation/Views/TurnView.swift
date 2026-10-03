@@ -16,6 +16,7 @@ struct TurnView: View {
     @State private var editText = ""
     @State private var copied = false
     @State private var showBefore = false
+    @AppStorage(SettingsKey.showAIUsage) private var showUsage = false
 
     private var editing: Bool { editingTurn == turn.id }
 
@@ -216,45 +217,42 @@ struct TurnView: View {
     }
 
     private func sentenceResult(_ sentence: SentenceResult) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
+        // 单词和短语查不到词典时也走机器翻译，但不提供 AI 优化：AI 只针对一句话
+        let isSentence = !ConversationController.isWordLike(sentence.source)
+        let waitingForAI = turn.isOptimizing && !sentence.showsAI
+        return VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
-                Chip(text: sentence.engine, systemName: "checkmark")
-                // 点一下用 AI 优化，再点一下关掉；之前优化过的结果会保留，打开时不用重新请求
-                Button {
-                    AISettings.shared.isConfigured || sentence.aiTranslation != nil ? controller.toggleAI(turn.id) : onNeedAI()
-                } label: {
-                    Label("AI 优化", systemImage: sentence.showsAI ? "sparkles" : "sparkle")
-                        .font(.footnote.weight(.semibold))
-                        .foregroundStyle(sentence.showsAI ? Color.lxAI : Color.secondary)
-                        .padding(.horizontal, 10)
-                        .frame(height: 28)
-                        .background(sentence.showsAI ? Color.lxAISoft : Color.secondary.opacity(0.12), in: .capsule)
-                        .frame(minHeight: 44)
-                        .contentShape(.rect)
-                }
-                .buttonStyle(.plain)
-                .disabled(turn.isOptimizing)
-                .accessibilityLabel("AI 优化")
-                .accessibilityValue(sentence.showsAI ? "开" : "关")
-                if sentence.showsAI, !turn.isOptimizing {
-                    Button {
-                        AISettings.shared.isConfigured ? controller.reoptimize(turn.id) : onNeedAI()
-                    } label: {
-                        Image(systemName: "arrow.clockwise")
-                            .font(.footnote.weight(.semibold))
-                            .foregroundStyle(Color.lxAI)
-                            .frame(width: 36, height: 44)
+                if sentence.showsAI {
+                    // 用了 AI 就只标 AI，不再同时显示机器翻译的来源
+                    aiChip(on: true)
+                    if !turn.isOptimizing {
+                        Button {
+                            AISettings.shared.isConfigured ? controller.reoptimize(turn.id) : onNeedAI()
+                        } label: {
+                            Image(systemName: "arrow.clockwise")
+                                .font(.footnote.weight(.semibold))
+                                .foregroundStyle(Color.lxAI)
+                                .frame(width: 36, height: 44)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("重新用 AI 优化")
                     }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("重新用 AI 优化")
+                } else {
+                    if !waitingForAI { Chip(text: sentence.engine, systemName: "checkmark") }
+                    if isSentence { aiChip(on: false) }
                 }
-                if turn.isOptimizing {
+            }
+            if waitingForAI {
+                // 开着 AI 优化时不先显示机器翻译，等优化好了直接显示结果
+                HStack(spacing: 8) {
                     ProgressView().controlSize(.small)
                     Text("AI 优化中…").font(.footnote).foregroundStyle(.secondary)
                 }
+                .frame(minHeight: 28)
+            } else {
+                FoldableText(text: sentence.displayed, font: .system(size: 19, weight: .medium), lineSpacing: 4,
+                             expanded: expanded, onToggle: onToggleExpand)
             }
-            FoldableText(text: sentence.displayed, font: .system(size: 19, weight: .medium), lineSpacing: 4,
-                         expanded: expanded, onToggle: onToggleExpand)
             if sentence.showsAI {
                 if sentence.aiTranslation != sentence.translation {
                     // 优化前的译文默认折叠
@@ -280,9 +278,11 @@ struct TurnView: View {
                 } else {
                     Text("AI 认为原译文无需修改").font(.footnote).foregroundStyle(.secondary)
                 }
-                Text([sentence.aiModel, sentence.aiUsage?.summary].compactMap { $0 }.joined(separator: " · "))
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(Color.lxAI)
+                if showUsage {
+                    Text([sentence.aiModel, sentence.aiUsage?.summary].compactMap { $0 }.joined(separator: " · "))
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(Color.lxAI)
+                }
             }
             if let error = turn.aiError {
                 Label(error, systemImage: "exclamationmark.triangle").font(.footnote).foregroundStyle(Color.lxAI)
@@ -312,6 +312,27 @@ struct TurnView: View {
                     .foregroundStyle(.secondary)
             }
         }
+    }
+
+    /// “AI 优化”开关：点一下用 AI 优化，再点一下回到机器翻译；之前优化过的结果会保留，打开时不用重新请求
+    private func aiChip(on: Bool) -> some View {
+        Button {
+            let sentence = turn.sentence
+            AISettings.shared.isConfigured || sentence?.aiTranslation != nil ? controller.toggleAI(turn.id) : onNeedAI()
+        } label: {
+            Label("AI 优化", systemImage: on ? "sparkles" : "sparkle")
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(on ? Color.lxAI : Color.secondary)
+                .padding(.horizontal, 10)
+                .frame(height: 28)
+                .background(on ? Color.lxAISoft : Color.secondary.opacity(0.12), in: .capsule)
+                .frame(minHeight: 44)
+                .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .disabled(turn.isOptimizing)
+        .accessibilityLabel("AI 优化")
+        .accessibilityValue(on ? "开" : "关")
     }
 
     private func iconButton(_ systemName: String, _ label: String, tint: Color = .secondary, action: @escaping () -> Void) -> some View {

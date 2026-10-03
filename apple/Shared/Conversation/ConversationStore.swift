@@ -128,6 +128,19 @@ final class ConversationStore: ObservableObject {
         save()
     }
 
+    /// 拖动会话：放到某个会话后面，并进入那个会话所在的场景
+    func moveSession(_ id: UUID, toScene sceneID: UUID?, after targetID: UUID) {
+        guard id != targetID, let index = sessions.firstIndex(where: { $0.id == id }) else { return }
+        var session = sessions.remove(at: index)
+        session.sceneID = sceneID
+        if let target = sessions.firstIndex(where: { $0.id == targetID }) {
+            sessions.insert(session, at: target + 1)
+        } else {
+            sessions.append(session)
+        }
+        save()
+    }
+
     func deleteSession(_ id: UUID) {
         guard let session = session(id) else { return }
         session.turns.flatMap(\.images).forEach { deleteImageFile($0.fileName) }

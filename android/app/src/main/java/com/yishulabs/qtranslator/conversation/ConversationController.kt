@@ -227,7 +227,8 @@ class ConversationController(context: Context) {
                 )
             }
             autoTitle(sessionId, text)
-            if (store.session(sessionId)?.aiEnabled == true && AISettings.isConfigured) optimize(sessionId, turn.id)
+            // 单词和短语不自动用 AI：它们查词典就够了，AI 优化只针对整句话
+            if (store.session(sessionId)?.aiEnabled == true && AISettings.isConfigured && !isWordLike(text)) optimize(sessionId, turn.id)
         } catch (e: Exception) {
             store.updateTurn(sessionId, turn.id) { it.copy(state = TurnState.FAILED, errorMessage = "翻译失败，请检查网络后重试。") }
         }
@@ -333,7 +334,8 @@ class ConversationController(context: Context) {
         store.updateSession(sessionId) { it.copy(title = line.take(18)) }
     }
 
-    private fun isWordLike(text: String): Boolean {
+    /** 单词或短语（查词典）；不是的才算一句话，AI 优化只针对一句话 */
+    fun isWordLike(text: String): Boolean {
         if (text.any { it in "\n,.!?;，。！？；" }) return false
         if (text.containsChinese) return text.length <= 8
         return text.length <= 40 && text.split(" ").size <= 4

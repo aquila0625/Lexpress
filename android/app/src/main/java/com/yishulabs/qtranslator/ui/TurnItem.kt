@@ -79,6 +79,7 @@ import com.yishulabs.qtranslator.conversation.Turn
 import com.yishulabs.qtranslator.conversation.TurnImage
 import com.yishulabs.qtranslator.conversation.TurnState
 import com.yishulabs.qtranslator.core.OnlineTranslator
+import com.yishulabs.qtranslator.core.Prefs
 import com.yishulabs.qtranslator.core.SentenceResult
 import com.yishulabs.qtranslator.core.Speaker
 import com.yishulabs.qtranslator.core.Speech
@@ -280,27 +281,37 @@ private fun SentenceBlock(
     val clipboard = LocalClipboardManager.current
     var copied by remember { mutableStateOf(false) }
     var showBefore by remember { mutableStateOf(false) }
+    // 单词和短语查不到词典时也走机器翻译，但不提供 AI 优化：AI 只针对一句话
+    val isSentence = !controller.isWordLike(sentence.source)
+    val waitingForAI = turn.isOptimizing && !sentence.showsAI
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Pill(sentence.engine, Icons.Rounded.Check, colors.accent, colors.accentSoft)
+            // 用了 AI 就只标 AI，不再同时显示机器翻译的来源
+            if (!sentence.showsAI && !waitingForAI) Pill(sentence.engine, Icons.Rounded.Check, colors.accent, colors.accentSoft)
             // 点一下用 AI 优化，再点一下关掉；之前优化过的结果会保留，打开时不用重新请求
-            Pill(
-                "AI 优化", Icons.Rounded.AutoAwesome,
-                if (sentence.showsAI) colors.ai else colors.ink3,
-                if (sentence.showsAI) colors.aiSoft else colors.ink3.copy(alpha = 0.12f),
-                onClick = {
-                    if (turn.isOptimizing) return@Pill
-                    if (AISettings.isConfigured || sentence.aiTranslation != null) controller.toggleAI(turn.id) else onNeedAI()
-                },
-            )
+            if (sentence.showsAI || isSentence) {
+                Pill(
+                    "AI 优化", Icons.Rounded.AutoAwesome,
+                    if (sentence.showsAI) colors.ai else colors.ink3,
+                    if (sentence.showsAI) colors.aiSoft else colors.ink3.copy(alpha = 0.12f),
+                    onClick = {
+                        if (turn.isOptimizing) return@Pill
+                        if (AISettings.isConfigured || sentence.aiTranslation != null) controller.toggleAI(turn.id) else onNeedAI()
+                    },
+                )
+            }
             if (sentence.showsAI && !turn.isOptimizing) {
                 IconButton(onClick = { if (AISettings.isConfigured) controller.reoptimize(turn.id) else onNeedAI() }, modifier = Modifier.size(36.dp)) {
                     Icon(Icons.Rounded.Refresh, "重新用 AI 优化", tint = colors.ai, modifier = Modifier.size(18.dp))
                 }
             }
-            if (turn.isOptimizing) Working("AI 优化中…")
         }
-        FoldableText(sentence.displayed, TextStyle(fontSize = 19.sp, fontWeight = FontWeight.Medium, lineHeight = 28.sp), expanded, onToggleExpand)
+        if (waitingForAI) {
+            // 开着 AI 优化时不先显示机器翻译，等优化好了直接显示结果
+            Working("AI 优化中…")
+        } else {
+            FoldableText(sentence.displayed, TextStyle(fontSize = 19.sp, fontWeight = FontWeight.Medium, lineHeight = 28.sp), expanded, onToggleExpand)
+        }
         if (sentence.showsAI) {
             if (sentence.aiTranslation != sentence.translation) {
                 // 优化前的译文默认折叠
@@ -320,10 +331,12 @@ private fun SentenceBlock(
             } else {
                 Text("AI 认为原译文无需修改", fontSize = 13.sp, color = colors.ink3)
             }
-            Text(
-                listOfNotNull(sentence.aiModel, sentence.aiUsage?.summary).joinToString(" · "),
-                fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = colors.ai,
-            )
+            if (Prefs.showAIUsage) {
+                Text(
+                    listOfNotNull(sentence.aiModel, sentence.aiUsage?.summary).joinToString(" · "),
+                    fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = colors.ai,
+                )
+            }
         }
         turn.aiError?.let { error ->
             Row(verticalAlignment = Alignment.CenterVertically) {

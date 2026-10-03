@@ -192,7 +192,7 @@ final class ConversationController: ObservableObject {
         let text = turn.source
         var suggestions: [Suggestion] = []
 
-        if isWordLike(text), let response = try? await Youdao.lookup(text) {
+        if Self.isWordLike(text), let response = try? await Youdao.lookup(text) {
             if let entry = response.entry {
                 store.updateTurn(sessionID, turn.id) {
                     $0.word = entry
@@ -216,7 +216,8 @@ final class ConversationController: ObservableObject {
                 $0.state = .done
             }
             autoTitle(sessionID, from: text)
-            if store.session(sessionID)?.aiEnabled == true, AISettings.shared.isConfigured {
+            // 单词和短语不自动用 AI：它们查词典就够了，AI 优化只针对整句话
+            if store.session(sessionID)?.aiEnabled == true, AISettings.shared.isConfigured, !Self.isWordLike(text) {
                 await optimize(sessionID, turn.id)
             }
         } catch {
@@ -332,7 +333,8 @@ final class ConversationController: ObservableObject {
         store.updateSession(sessionID) { $0.title = String(line.prefix(18)) }
     }
 
-    private func isWordLike(_ text: String) -> Bool {
+    /// 单词或短语（查词典）；不是的才算一句话，AI 优化只针对一句话
+    static func isWordLike(_ text: String) -> Bool {
         if text.contains(where: { "\n,.!?;，。！？；".contains($0) }) { return false }
         if text.containsChinese { return text.count <= 8 }
         return text.count <= 40 && text.split(separator: " ").count <= 4

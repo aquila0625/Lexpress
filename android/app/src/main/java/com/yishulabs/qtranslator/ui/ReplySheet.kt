@@ -57,6 +57,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.yishulabs.qtranslator.ai.AISettings
 import com.yishulabs.qtranslator.ai.AITasks
+import com.yishulabs.qtranslator.core.Prefs
 import com.yishulabs.qtranslator.core.Speech
 import com.yishulabs.qtranslator.core.isMostlyChinese
 import kotlinx.coroutines.launch
@@ -165,7 +166,7 @@ fun ReplySheet(received: String, receivedTranslation: String, onDismiss: () -> U
                     Text(result.text, fontSize = 18.sp, fontWeight = FontWeight.Medium, color = colors.ink, lineHeight = 26.sp,
                         modifier = Modifier.fillMaxWidth().background(colors.aiSoft, RoundedCornerShape(18.dp)).padding(14.dp))
                 }
-                result.usage?.let { Text("$usedModel · ${it.summary}", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = colors.ai) }
+                result.usage?.takeIf { Prefs.showAIUsage }?.let { Text("$usedModel · ${it.summary}", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = colors.ai) }
                 if (result.chinese.isNotEmpty()) {
                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         SectionHeader("中文对照")
