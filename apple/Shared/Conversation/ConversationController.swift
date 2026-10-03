@@ -195,6 +195,23 @@ final class ConversationController: ObservableObject {
         }
     }
 
+    /// 只重新识别和翻译这一张图片（识别失败、没识别到文字或翻译不完整时用）
+    func reprocessImage(_ turnID: UUID, _ imageID: UUID) {
+        let sessionID = currentID
+        store.updateTurn(sessionID, turnID) {
+            if let i = $0.images.firstIndex(where: { $0.id == imageID }) {
+                $0.images[i].recognized = ""
+                $0.images[i].translation = ""
+                $0.images[i].blocks = nil
+                $0.images[i].failed = nil
+                $0.images[i].done = false
+            }
+            $0.errorMessage = nil
+            $0.state = .working
+        }
+        Task { await process(sessionID, turnID) }
+    }
+
     /// 把图片顺时针转 90°，然后只重新识别和翻译这一张
     func rotateImage(_ turnID: UUID, _ imageID: UUID) {
         guard let turn = store.turn(currentID, turnID), let item = turn.images.first(where: { $0.id == imageID }),
@@ -269,11 +286,17 @@ final class ConversationController: ObservableObject {
         let useAI = store.session(sessionID)?.aiEnabled == true && AISettings.shared.isConfigured
         for item in turn.images where !item.done {
             guard let image = store.image(named: item.fileName) else { continue }
-            let found = (try? await ImageText.recognizeBlocks(image)) ?? []
+            var failed = false
+            let found: [ImageText.Block]
+            do {
+                found = try await ImageText.recognizeBlocks(image)
+            } catch {
+                found = []
+                failed = true
+            }
             let recognized = found.map(\.text).joined(separator: "\n")
             let chinese = turn.manualDirection ? turn.sourceIsChinese : recognized.isMostlyChinese
             var translations = Array(repeating: "", count: found.count)
-            var failed = false
             if !found.isEmpty {
                 if useAI, let result = try? await AITasks.translateImageBlocks(found.map(\.text), instruction: turn.instruction,
                                                                                  toChinese: !chinese, config: AIClient.currentConfig) {
@@ -300,9 +323,9 @@ final class ConversationController: ObservableObject {
                     $0.images[i].blocks = blocks
                     $0.images[i].translation = found.isEmpty ? "（这张图片里没有识别到文字）"
                         : translations.filter { !$0.isEmpty }.joined(separator: "\n")
+                    $0.images[i].failed = failed || translations.allSatisfy(\.isEmpty) && !found.isEmpty ? true : nil
                     $0.images[i].done = true
                 }
-                if failed { $0.errorMessage = "有几段没翻译成功，可以点重试" }
             }
         }
         store.updateTurn(sessionID, turn.id) {

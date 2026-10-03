@@ -302,16 +302,36 @@ struct TurnView: View {
                 if turn.images.count > 1 {
                     Text("\(index + 1)/\(turn.images.count)").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                 }
-                if item.done, (item.blocks ?? []).isEmpty {
-                    Text(item.blocks == nil ? item.translation : "没有识别到文字")
+                let problem = item.done && (item.failed == true || (item.blocks ?? []).isEmpty)
+                if problem {
+                    Text(item.failed == true ? "识别或翻译失败" : (item.blocks == nil ? item.translation : "没有识别到文字"))
                         .font(.footnote)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(item.failed == true ? Color.lxAI : .secondary)
                         .lineLimit(1)
                 }
                 Spacer(minLength: 0)
+                if item.done {
+                    // 出问题时显示文字按钮，平时只是一个小图标
+                    Button {
+                        controller.reprocessImage(turn.id, item.id)
+                    } label: {
+                        Group {
+                            if problem && (width ?? 999) >= 150 {
+                                Label("重新识别", systemImage: "arrow.clockwise").font(.caption.weight(.semibold))
+                            } else {
+                                Image(systemName: "arrow.clockwise").font(.system(size: 13, weight: .medium))
+                            }
+                        }
+                        .foregroundStyle(problem ? Color.lxAccent : Color.secondary)
+                        .frame(minWidth: 36, minHeight: 36)
+                        .contentShape(.rect)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("重新识别图 \(index + 1)")
+                }
                 if hasBlocks, !item.translation.isEmpty {
                     CopyButton(text: item.translation, label: "复制图 \(index + 1) 的译文",
-                               title: (width ?? 999) >= 170 ? "复制译文" : nil)
+                               title: (width ?? 999) >= 210 ? "复制译文" : nil)
                 }
             }
             .frame(width: width)

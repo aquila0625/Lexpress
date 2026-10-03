@@ -41,6 +41,8 @@ struct TurnImage: Codable, Identifiable, Equatable {
     var done = false
     /// 按段识别的文字和位置；旧版本保存的图片没有
     var blocks: [ImageBlock]?
+    /// 识别出错，或者有几段没翻译成功：显示“重新识别”
+    var failed: Bool?
 }
 
 enum TurnState: String, Codable {

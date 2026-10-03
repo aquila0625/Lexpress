@@ -160,6 +160,11 @@ struct ImageEditView: View {
                             .frame(minHeight: 44)
                     }
                     .buttonStyle(.glass)
+                    Button { controller.reprocessImage(turnID, imageID) } label: {
+                        Label("重新识别", systemImage: "arrow.clockwise").frame(minHeight: 44)
+                    }
+                    .buttonStyle(.glass)
+                    .disabled(item?.done != true)
                     Button { controller.rotateImage(turnID, imageID) } label: {
                         Label("旋转", systemImage: "rotate.right").frame(minHeight: 44)
                     }
