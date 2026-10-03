@@ -5,6 +5,7 @@ import SwiftUI
 struct InterpreterView: View {
     @ObservedObject var controller: ConversationController
     @StateObject private var interpreter: Interpreter
+    @StateObject private var translator: LiveTranslator
     @Environment(\.dismiss) private var dismiss
     @AppStorage("interpreter.sourceIsChinese") private var sourceIsChinese = false
     /// 已经保存过（点了结束）；用其他方式关掉时也要保存
@@ -12,8 +13,10 @@ struct InterpreterView: View {
 
     init(controller: ConversationController) {
         self.controller = controller
-        _interpreter = StateObject(wrappedValue: Interpreter { text, chinese in
-            await controller.translate(text, fromChinese: chinese)
+        let translator = LiveTranslator { text, chinese in await controller.translate(text, fromChinese: chinese) }
+        _translator = StateObject(wrappedValue: translator)
+        _interpreter = StateObject(wrappedValue: Interpreter { text, chinese, live in
+            await translator.translate(text, fromChinese: chinese, live: live)
         })
     }
 
@@ -24,7 +27,12 @@ struct InterpreterView: View {
             bottomBar
         }
         .background { WashBackground().ignoresSafeArea() }
-        .task { await interpreter.start(sourceIsChinese: sourceIsChinese) }
+        // 专用的本机翻译通道，一直开着
+        .translationTask(translator.configuration) { session in await translator.run(session) }
+        .task {
+            await translator.prepare(fromChinese: sourceIsChinese)
+            await interpreter.start(sourceIsChinese: sourceIsChinese)
+        }
         .onDisappear {
             guard !saved else { return }
             saved = true
@@ -45,6 +53,7 @@ struct InterpreterView: View {
             GlassIconButton(systemName: "xmark", label: "结束并保存") { finish() }
             Button {
                 Task {
+                    await translator.prepare(fromChinese: !interpreter.sourceIsChinese)
                     await interpreter.switchDirection()
                     sourceIsChinese = interpreter.sourceIsChinese
                 }
@@ -105,12 +114,21 @@ struct InterpreterView: View {
                         .id(segment.id)
                     }
                     if !interpreter.live.isEmpty {
-                        Text(interpreter.live + "…")
-                            .font(.system(size: 18, weight: .medium))
-                            .padding(12)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .background(Color.lxAccentSoft, in: .rect(cornerRadius: 14))
-                            .id("live")
+                        // 还没说完的那句：原文和边说边翻的译文一起往下长
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(interpreter.live + "…")
+                                .font(.callout)
+                                .foregroundStyle(.secondary)
+                            if !interpreter.liveTranslation.isEmpty {
+                                Text(interpreter.liveTranslation + "…")
+                                    .font(.system(size: 19, weight: .semibold))
+                            }
+                        }
+                        .padding(12)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Color.lxAccentSoft, in: .rect(cornerRadius: 14))
+                        .animation(.snappy, value: interpreter.liveTranslation)
+                        .id("live")
                     }
                     Color.clear.frame(height: 1).id("bottom")
                 }
@@ -120,6 +138,7 @@ struct InterpreterView: View {
             .overlay { statusOverlay }
             .onChange(of: interpreter.segments.count) { withAnimation { proxy.scrollTo("bottom", anchor: .bottom) } }
             .onChange(of: interpreter.live) { proxy.scrollTo("bottom", anchor: .bottom) }
+            .onChange(of: interpreter.liveTranslation) { proxy.scrollTo("bottom", anchor: .bottom) }
         }
     }
 
@@ -141,7 +160,8 @@ struct InterpreterView: View {
                     Image(systemName: "waveform").font(.largeTitle).foregroundStyle(Color.lxAccent)
                     Text(interpreter.sourceIsChinese ? "正在听中文，说完一句就会翻译" : "正在听英语，说完一句就会翻译")
                         .foregroundStyle(.secondary)
-                    Text((interpreter.engineName.isEmpty ? "" : interpreter.engineName + " · ") + "录音不上传")
+                    Text((interpreter.engineName.isEmpty ? "" : interpreter.engineName + " · ")
+                         + (translator.onDevice ? "本机翻译" : "在线翻译") + " · 录音不上传")
                         .font(.footnote).foregroundStyle(.tertiary)
                 }
             }

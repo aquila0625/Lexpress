@@ -5,6 +5,16 @@ import SwiftUI
 struct FaceToFaceView: View {
     @ObservedObject var controller: ConversationController
     @ObservedObject private var voice = VoiceInput.shared
+    /// 专用的本机翻译通道：两个方向各一个，一直开着
+    @StateObject private var toEnglish: LiveTranslator
+    @StateObject private var toChinese: LiveTranslator
+
+    init(controller: ConversationController) {
+        self.controller = controller
+        let fallback: (String, Bool) async -> String? = { text, chinese in await controller.translate(text, fromChinese: chinese) }
+        _toEnglish = StateObject(wrappedValue: LiveTranslator(fallback: fallback))
+        _toChinese = StateObject(wrappedValue: LiveTranslator(fallback: fallback))
+    }
     @ObservedObject private var speaker = Speaker.shared
     @Environment(\.dismiss) private var dismiss
 
@@ -24,6 +34,12 @@ struct FaceToFaceView: View {
         }
         .overlay { controls }
         .background(Color.lxBackground)
+        .translationTask(toEnglish.configuration) { session in await toEnglish.run(session) }
+        .translationTask(toChinese.configuration) { session in await toChinese.run(session) }
+        .task {
+            await toEnglish.prepare(fromChinese: true)
+            await toChinese.prepare(fromChinese: false)
+        }
         .onDisappear {
             if voice.isListening { voice.cancel() }
             Speaker.shared.stop()
@@ -149,7 +165,8 @@ struct FaceToFaceView: View {
         }
         translating = true
         Task {
-            let translation = await controller.translate(text, fromChinese: mine) ?? "（翻译失败）"
+            let translator = mine ? toEnglish : toChinese
+            let translation = await translator.translate(text, fromChinese: mine) ?? "（翻译失败）"
             translating = false
             withAnimation(.snappy) {
                 lines.append(DialogLine(isMine: mine, original: text, translation: translation, originalIsChinese: mine))

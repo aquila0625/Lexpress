@@ -23,8 +23,11 @@ final class Interpreter: ObservableObject {
 
     @Published private(set) var state: State = .idle
     @Published private(set) var segments: [Segment] = []
-    /// 还在说、没说完的那一句
-    @Published private(set) var live = ""
+    /// 还在说、没说完的那一句，以及它边说边翻的译文
+    @Published private(set) var live = "" {
+        didSet { if live != oldValue { translateLive() } }
+    }
+    @Published private(set) var liveTranslation = ""
     @Published private(set) var levels: [CGFloat] = Array(repeating: 0, count: 30)
     @Published private(set) var startedAt: Date?
     /// 原文语言：true 是中文（中 → 英），false 是英语（英 → 中）
@@ -32,7 +35,10 @@ final class Interpreter: ObservableObject {
     /// 用耳机朗读译文
     @Published var speakTranslations = false
 
-    private let translate: (String, Bool) async -> String?
+    /// (文字, 原文是否中文, 是否还没说完的半句) -> 译文
+    private let translate: (String, Bool, Bool) async -> String?
+    private var liveTranslating = false
+    private var liveDirty = false
     private let engine = AVAudioEngine()
     private var analyzer: SpeechAnalyzer?
     private var transcriber: SpeechTranscriber?
@@ -49,7 +55,7 @@ final class Interpreter: ObservableObject {
     /// 暂停时累计的时长
     private var elapsedBeforePause: TimeInterval = 0
 
-    init(translate: @escaping (String, Bool) async -> String?) {
+    init(translate: @escaping (String, Bool, Bool) async -> String?) {
         self.translate = translate
     }
 
@@ -289,15 +295,43 @@ final class Interpreter: ObservableObject {
         return result
     }
 
+    /// 边说边翻：还没说完的那句隔一会儿翻一次，同一时间只翻一次，翻完再看有没有新内容
+    private func translateLive() {
+        let text = live.trimmed
+        guard text.count > 2 else {
+            liveTranslation = ""
+            return
+        }
+        if liveTranslating {
+            liveDirty = true
+            return
+        }
+        liveTranslating = true
+        let chinese = sourceIsChinese
+        Task {
+            let result = await translate(text, chinese, true)
+            liveTranslating = false
+            if !live.trimmed.isEmpty, let result { liveTranslation = result }
+            if liveDirty {
+                liveDirty = false
+                try? await Task.sleep(for: .milliseconds(150))
+                translateLive()
+            }
+        }
+    }
+
     private func emit(_ sentence: String) {
         let text = sentence.trimmed
         guard text.count > 1 else { return }
-        let segment = Segment(original: text)
+        // 说完的这句先用边说边翻的译文顶上，正式译文出来再替换
+        var segment = Segment(original: text)
+        segment.translation = liveTranslation.isEmpty ? nil : liveTranslation
+        liveTranslation = ""
         segments.append(segment)
         let id = segment.id
         let chinese = sourceIsChinese
         Task {
-            let translation = await translate(text, chinese) ?? "（翻译失败）"
+            let translation = await translate(text, chinese, false) ?? "（翻译失败）"
             if let i = segments.firstIndex(where: { $0.id == id }) { segments[i].translation = translation }
             if speakTranslations { Speaker.shared.play(.text(translation, isChinese: !chinese), keepAudioSession: true) }
         }
