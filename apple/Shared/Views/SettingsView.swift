@@ -6,6 +6,7 @@ struct SettingsView: View {
     @AppStorage(SettingsKey.accent) private var accent = 2
     @AppStorage(SettingsKey.autoSpeak) private var autoSpeak = false
 
+    @ObservedObject private var usage = UsageStore.shared
     @State private var testing = false
     @State private var testResult: String?
 
@@ -52,6 +53,17 @@ struct SettingsView: View {
                         }
                     }
                     .disabled(testing || !ai.isConfigured)
+                    let summary = UsageStore.summarize(usage.records(for: ai.provider))
+                    LabeledContent("\(ai.provider.title) 累计用量") {
+                        VStack(alignment: .trailing, spacing: 2) {
+                            Text("\(summary.total.formatted()) tokens")
+                            Text(summary.total == 0 ? "还没有用过" :
+                                 (summary.cost > 0 ? "约 " + Pricing.format(summary.cost) + "（按标价估算）" : "无价格数据"))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    NavigationLink("用量报表") { UsageReportView() }
                 } header: {
                     Text("AI 增强（可选）")
                 } footer: {
@@ -83,15 +95,18 @@ struct SettingsView: View {
             }
             .formStyle(.grouped)
             .navigationTitle("设置")
+            #if os(macOS)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("完成") { dismiss() }
                 }
             }
+            #endif
         }
         #if os(macOS)
         .frame(minWidth: 460, minHeight: 600)
         #endif
+        .presentationDragIndicator(.visible)
         .tint(.lxAccent)
     }
 

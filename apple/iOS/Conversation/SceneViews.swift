@@ -91,14 +91,13 @@ struct SceneEditorView: View {
                     Section {
                         Button("删除场景", role: .destructive) { confirmDelete = true }
                     } footer: {
-                        Text("删除场景不会删除里面的会话，它们会移到“未分类”。")
+                        Text("删除场景不会删除里面的会话，它们会移到列表最下面。")
                     }
                 }
             }
             .navigationTitle(sceneID == nil ? "新建场景" : "编辑场景")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
                     Button(sceneID == nil ? "创建" : "保存") { save() }
                         .disabled(name.trimmed.isEmpty)
@@ -111,6 +110,7 @@ struct SceneEditorView: View {
                 }
             }
         }
+        .presentationDragIndicator(.visible)
         .tint(.lxAccent)
         .onAppear {
             if let scene = store.scene(sceneID) {
@@ -157,7 +157,7 @@ struct NewSessionView: View {
                 }
                 Section {
                     Picker("场景", selection: $sceneID) {
-                        Text("未分类").tag(UUID?.none)
+                        Text("不放进场景").tag(UUID?.none)
                         ForEach(store.scenes) { scene in
                             Label(scene.name, systemImage: scene.cover.symbol).tag(Optional(scene.id))
                         }
@@ -173,7 +173,6 @@ struct NewSessionView: View {
             .navigationTitle("新建会话")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("创建") {
                         let session = store.createSession(title: name, sceneID: sceneID, aiEnabled: aiEnabled)
@@ -186,6 +185,7 @@ struct NewSessionView: View {
                 SceneEditorView(store: store, sceneID: nil) { sceneID = $0.id }
             }
         }
+        .presentationDragIndicator(.visible)
         .tint(.lxAccent)
     }
 }

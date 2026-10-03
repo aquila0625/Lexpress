@@ -13,6 +13,8 @@ struct ConversationView: View {
     @State private var editingTurn: UUID?
     @State private var showOutline = false
     @State private var scrollTarget: UUID?
+    /// 从输入记录跳过来的那一轮，短暂高亮
+    @State private var highlighted: UUID?
     @State private var renaming = false
     @State private var renameText = ""
     @State private var confirmDelete = false
@@ -42,6 +44,13 @@ struct ConversationView: View {
                                      onReply: { replyTo = $0 },
                                      onEditImage: { editingImage = ImageRef(turnID: turn.id, imageID: $0) },
                                      onNeedAI: onSettings)
+                                .background {
+                                    RoundedRectangle(cornerRadius: 20)
+                                        .fill(Color.lxAccent.opacity(highlighted == turn.id ? 0.14 : 0))
+                                        .stroke(Color.lxAccent.opacity(highlighted == turn.id ? 0.6 : 0), lineWidth: 2)
+                                        .padding(-10)
+                                }
+                                .scaleEffect(highlighted == turn.id ? 1.02 : 1)
                                 .id(turn.id)
                         }
                     }
@@ -58,8 +67,16 @@ struct ConversationView: View {
                 }
                 .onChange(of: scrollTarget) {
                     guard let target = scrollTarget else { return }
-                    withAnimation { proxy.scrollTo(target, anchor: .top) }
                     scrollTarget = nil
+                    Task {
+                        // 等弹窗收起再滚动，然后闪一下这一轮
+                        try? await Task.sleep(for: .milliseconds(350))
+                        withAnimation(.easeInOut(duration: 0.35)) { proxy.scrollTo(target, anchor: .center) }
+                        try? await Task.sleep(for: .milliseconds(350))
+                        withAnimation(.spring(duration: 0.35, bounce: 0.4)) { highlighted = target }
+                        try? await Task.sleep(for: .seconds(2.2))
+                        withAnimation(.easeOut(duration: 0.6)) { highlighted = nil }
+                    }
                 }
                 .onChange(of: controller.currentID) {
                     editingTurn = nil
@@ -112,7 +129,7 @@ struct ConversationView: View {
                     renaming = true
                 }
                 Menu("移到场景", systemImage: "folder") {
-                    Button("未分类") { store.moveSession(controller.currentID, to: nil) }
+                    Button("不放进场景") { store.moveSession(controller.currentID, to: nil) }
                     ForEach(store.scenes) { scene in
                         Button(scene.name) { store.moveSession(controller.currentID, to: scene.id) }
                     }
@@ -133,7 +150,7 @@ struct ConversationView: View {
             .foregroundStyle(.primary)
             .glassEffect(.regular.interactive(), in: .capsule)
             .accessibilityLabel("当前会话：\(session?.title ?? "")，点按重命名或移动")
-            GlassIconButton(systemName: "list.bullet", label: "原文目录") { showOutline = true }
+            GlassIconButton(systemName: "list.bullet", label: "输入记录") { showOutline = true }
             GlassIconButton(systemName: "square.and.pencil", label: "新建会话") { onNewSession() }
         }
         .padding(.horizontal, 12)
@@ -164,7 +181,7 @@ private struct IdentifiedSentence: Identifiable {
     var id: String { result.source + result.translation }
 }
 
-/// 原文目录：列出这个会话里输入过的每一条，可以搜索，点一条跳过去
+/// 输入记录：列出这个会话里输入过的每一条，可以搜索，点一条跳过去并高亮
 struct OutlineView: View {
     let turns: [Turn]
     let onSelect: (UUID) -> Void
@@ -207,14 +224,12 @@ struct OutlineView: View {
             .overlay {
                 if turns.isEmpty { ContentUnavailableView("还没有内容", systemImage: "text.bubble") }
             }
-            .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "在这个会话里搜索原文和译文")
-            .navigationTitle("原文目录")
+            .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "搜索输入过的内容和译文")
+            .navigationTitle("输入记录")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() } }
-            }
         }
         .presentationDetents([.medium, .large])
+        .presentationDragIndicator(.visible)
         .tint(.lxAccent)
     }
 

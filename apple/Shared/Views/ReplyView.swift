@@ -22,7 +22,9 @@ struct ReplyView: View {
                 HStack {
                     Text("写回复").font(.title2.weight(.bold))
                     Spacer()
+                    #if os(macOS)
                     GlassIconButton(systemName: "xmark", label: "关闭") { dismiss() }
+                    #endif
                 }
 
                 VStack(alignment: .leading, spacing: 6) {
@@ -83,6 +85,7 @@ struct ReplyView: View {
             .padding(20)
         }
         .background(Color.lxBackground)
+        .presentationDragIndicator(.visible)
         #if os(macOS)
         .frame(minWidth: 460, minHeight: 600)
         #endif

@@ -37,10 +37,15 @@ enum AIClient {
 
     static func complete(system: String, user: String, config: Config) async throws -> AIResponse {
         guard !config.apiKey.isEmpty else { throw AIError(message: "还没有填写 API Key。") }
+        let response: AIResponse
         switch config.provider {
-        case .claude: return try await claude(system: system, user: user, config: config)
-        case .openai, .deepseek, .custom: return try await openAICompatible(system: system, user: user, config: config)
+        case .claude: response = try await claude(system: system, user: user, config: config)
+        case .openai, .deepseek, .custom: response = try await openAICompatible(system: system, user: user, config: config)
         }
+        if let usage = response.usage {
+            await MainActor.run { UsageStore.shared.add(provider: config.provider, model: config.model, usage: usage) }
+        }
+        return response
     }
 
     // MARK: Claude（Anthropic Messages API）
