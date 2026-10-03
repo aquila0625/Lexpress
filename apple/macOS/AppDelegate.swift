@@ -51,7 +51,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // 支持带参数启动直接查询：open -a Q-Translator --args hello，或传一张图片的路径
         let query = CommandLine.arguments.dropFirst().filter { !$0.hasPrefix("-") }.joined(separator: " ")
         if let image = NSImage(contentsOfFile: query) {
-            controller.sendImages([image])
+            // 图片先放在输入框上方等用户确认（可以再加一句要求），由输入栏发送
+            controller.attachImages([image])
         } else if !query.isEmpty {
             send(query)
         }
@@ -79,11 +80,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         controller.send()
     }
 
-    /// ⌘V：剪贴板里是图片就识别并翻译，否则按普通文字粘贴
+    /// ⌘V：剪贴板里是图片就放到输入框上方等待发送，否则按普通文字粘贴
     @objc func smartPaste(_ sender: Any?) {
         // 设置、写回复等面板打开时，只做普通粘贴
         if window.attachedSheet == nil, let image = StatusBarController.image(from: .general) {
-            controller.sendImages([image])
+            controller.attachImages([image])
         } else {
             NSApp.sendAction(#selector(NSText.paste(_:)), to: nil, from: sender)
         }
