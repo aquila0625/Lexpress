@@ -14,6 +14,9 @@ extension Color {
     static let lxSentenceCard = Color(light: 0xEEF7F2, dark: 0x15221C)
     /// 会话里图片译文卡片的底色（中性浅灰）
     static let lxImageCard = Color(light: 0xF3F4F6, dark: 0x1A1D22)
+    /// 和卡片底色配套的深色：用于筛选按钮的文字和选中时的底色
+    static let lxSentenceInk = Color(light: 0x1E7A45, dark: 0x7FD6A3)
+    static let lxImageInk = Color(light: 0x4A5565, dark: 0xAEB8C4)
 
     init(light: UInt32, dark: UInt32) {
         #if os(macOS)

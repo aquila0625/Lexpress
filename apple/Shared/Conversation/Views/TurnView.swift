@@ -13,6 +13,25 @@ enum TurnKind: CaseIterable {
     }
 }
 
+extension TurnKind {
+    /// 和会话里这类卡片相同的底色，以及配套的深色
+    var cardColor: Color {
+        switch self {
+        case .word: .lxSurface
+        case .sentence: .lxSentenceCard
+        case .image: .lxImageCard
+        }
+    }
+
+    var inkColor: Color {
+        switch self {
+        case .word: .lxAccent
+        case .sentence: .lxSentenceInk
+        case .image: .lxImageInk
+        }
+    }
+}
+
 extension Turn {
     var kind: TurnKind {
         if isImage { return .image }

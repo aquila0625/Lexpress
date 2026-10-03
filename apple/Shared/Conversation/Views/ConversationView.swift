@@ -87,9 +87,9 @@ struct ConversationView: View {
         if counts.count >= 2 {
             ScrollView(.horizontal) {
                 HStack(spacing: 8) {
-                    filterChip("全部 \(turns.count)", on: filter == nil) { filter = nil }
+                    filterChip("全部 \(turns.count)", on: filter == nil, kind: nil) { filter = nil }
                     ForEach(counts, id: \.0) { kind, count in
-                        filterChip("\(kind.title) \(count)", on: filter == kind) { filter = filter == kind ? nil : kind }
+                        filterChip("\(kind.title) \(count)", on: filter == kind, kind: kind) { filter = filter == kind ? nil : kind }
                     }
                 }
                 .padding(.horizontal, 16)
@@ -99,8 +99,11 @@ struct ConversationView: View {
         }
     }
 
-    private func filterChip(_ title: String, on: Bool, action: @escaping () -> Void) -> some View {
-        Button {
+    /// 筛选按钮的配色和会话里对应的卡片一致：单词浅蓝、句子浅绿、图片浅灰；选中时换成同色系的深色底、白字
+    private func filterChip(_ title: String, on: Bool, kind: TurnKind?, action: @escaping () -> Void) -> some View {
+        let ink = kind?.inkColor ?? Color.primary
+        let card = kind?.cardColor ?? Color.secondary.opacity(0.12)
+        return Button {
             withAnimation(.snappy) {
                 selectedTurn = nil
                 action()
@@ -108,10 +111,11 @@ struct ConversationView: View {
         } label: {
             Text(title)
                 .font(.footnote.weight(.semibold))
-                .foregroundStyle(on ? Color.lxBackground : Color.secondary)
+                .foregroundStyle(on ? Color.lxBackground : (kind == nil ? Color.secondary : ink))
                 .padding(.horizontal, 12)
                 .frame(height: 30)
-                .background(on ? Color.primary : Color.secondary.opacity(0.12), in: .capsule)
+                .background(on ? ink : card, in: .capsule)
+                .overlay { Capsule().stroke(ink.opacity(on || kind == nil ? 0 : 0.18), lineWidth: 1) }
                 .frame(minHeight: 40)
                 .contentShape(.rect)
         }
