@@ -50,6 +50,7 @@ let delegate = MainActor.assumeIsolated { AppDelegate() }
 MainActor.assumeIsolated {
     let app = NSApplication.shared
     app.delegate = delegate
-    app.setActivationPolicy(.regular)
+    // 选了“只在菜单栏显示”时不出现在程序坞
+    app.setActivationPolicy(UserDefaults.standard.bool(forKey: MenuBarKey.hideDockIcon) ? .accessory : .regular)
     app.run()
 }

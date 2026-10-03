@@ -7,7 +7,7 @@ import UniformTypeIdentifiers
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private let controller = ConversationController()
     private var window: NSWindow!
-    private var hotKey: HotKey?
+    private var statusBar: StatusBarController!
     private var escapeMonitor: Any?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -26,10 +26,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         window.center()
         window.setFrameAutosaveName("QTranslatorMainWindow")
 
-        // ⌥D 全局呼出 / 隐藏
-        hotKey = HotKey(keyCode: kVK_ANSI_D, modifiers: optionKey) { [weak self] in
-            Task { @MainActor in self?.toggle() }
-        }
+        // 菜单栏图标和全局快捷键（⌥D 主窗口、⌥F 选中文字、⌥V 剪贴板、⌥S 截图、⌥A 输入）
+        statusBar = StatusBarController(controller: controller,
+                                        toggleMainWindow: { [weak self] in self?.toggle() },
+                                        showMainWindow: { [weak self] in self?.show() },
+                                        newSession: { [weak self] in self?.newSession(nil) },
+                                        openSettings: { [weak self] in self?.openSettings(nil) })
 
         // Esc 隐藏；输入法正在组字时把 Esc 留给输入法，弹出的面板里的 Esc 也不拦
         escapeMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
@@ -43,7 +45,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // 系统“服务”：在任意 app 里选中文字 → 右键 → 用快译翻译（端口名要和 Info.plist 的 NSPortName 一致）
         NSRegisterServicesProvider(self, "QTranslator")
 
-        show()
+        // 选了“只在菜单栏显示”时，启动后不弹主窗口
+        if !UserDefaults.standard.bool(forKey: MenuBarKey.hideDockIcon) { show() }
 
         // 支持带参数启动直接查询：open -a Q-Translator --args hello，或传一张图片的路径
         let query = CommandLine.arguments.dropFirst().filter { !$0.hasPrefix("-") }.joined(separator: " ")
@@ -66,8 +69,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                                   error: AutoreleasingUnsafeMutablePointer<NSString>) {
         guard let text = pasteboard.string(forType: .string)?.trimmed, !text.isEmpty else { return }
         log.info("service: received \(text.count, privacy: .public) characters")
-        show()
-        send(text)
+        // 在鼠标旁边的小窗里直接显示译文，不打断手上的事
+        statusBar.translate(text: text)
     }
 
     /// 放进当前会话翻译
@@ -79,27 +82,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// ⌘V：剪贴板里是图片就识别并翻译，否则按普通文字粘贴
     @objc func smartPaste(_ sender: Any?) {
         // 设置、写回复等面板打开时，只做普通粘贴
-        if window.attachedSheet == nil, let image = Self.image(from: .general) {
+        if window.attachedSheet == nil, let image = StatusBarController.image(from: .general) {
             controller.sendImages([image])
         } else {
             NSApp.sendAction(#selector(NSText.paste(_:)), to: nil, from: sender)
         }
-    }
-
-    private static func image(from pasteboard: NSPasteboard) -> NSImage? {
-        // 在访达里复制的图片文件
-        let options: [NSPasteboard.ReadingOptionKey: Any] = [
-            .urlReadingFileURLsOnly: true,
-            .urlReadingContentsConformToTypes: [UTType.image.identifier],
-        ]
-        if let url = (pasteboard.readObjects(forClasses: [NSURL.self], options: options) as? [URL])?.first {
-            return NSImage(contentsOf: url)
-        }
-        // 有纯文本就当文字粘贴：表格、幻灯片里复制文字时也会附带一张图片。
-        // 网页上“拷贝图像”附带的是图片地址，这种情况仍按图片处理。
-        let text = pasteboard.string(forType: .string)?.trimmed ?? ""
-        if !text.isEmpty, !text.lowercased().hasPrefix("http") { return nil }
-        return NSImage(pasteboard: pasteboard)
     }
 
     @objc func newSession(_ sender: Any?) {
