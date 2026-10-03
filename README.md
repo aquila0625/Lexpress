@@ -1,6 +1,6 @@
 # Lexpress 快译
 
-Lexpress is a fast, simple English ⇄ Chinese dictionary and translator for iPhone, iPad and Mac. Open it, type a word, a sentence or a paragraph, and get the result right away.
+Lexpress is a fast, simple English ⇄ Chinese dictionary and translator for iPhone, iPad, Mac and Android. Open it, type a word, a sentence or a paragraph, and get the result right away.
 
 Lexpress（快译）是一个简单、直接、高效的中英词典和翻译工具：打开就能输入，单词、句子、整段话都能翻译。
 
@@ -10,17 +10,19 @@ Lexpress（快译）是一个简单、直接、高效的中英词典和翻译工
 | --- | --- |
 | iPhone / iPad | Working (`apple/`, iOS 26 or later) |
 | macOS | Working (`apple/`, macOS 26 or later) |
-| Android phone / tablet | Planned |
+| Android phone / tablet | Working (`android/`, Android 8 or later) |
 
 ## Features
 
+- **Conversations**: every translation is kept in a conversation; group conversations into scenes (classroom, travel, renting…), search them, and jump back to anything you typed
 - **Words**: UK/US phonetics, a summary by part of speech, every meaning listed one by one with examples (common meanings first), phrases, related words, synonym notes and etymology
-- **Sentences and paragraphs**: translated on device with Apple's Translation framework when the language model is installed, online otherwise
+- **Sentences and paragraphs**: translated on device (Apple's Translation framework, or Google ML Kit on Android) once the language model is installed, online otherwise
 - **Pronunciation**: British and American English, and Chinese
 - **Image translation**: take a photo, pick an image, or paste / drop one on the Mac; text is recognised on device
 - **History and word list**: recent lookups, with a star to keep words
 - **AI (optional, bring your own key)**: check and correct a machine translation, and draft a reply to a message you just translated (text message or email; from your key points or by polishing your own draft)
 - **macOS extras**: global hotkey `⌥D`, "translate selection" in the right-click Services menu, `⌘V` to paste an image
+- **Android extras**: share text or images to Lexpress, or pick "快译" from the text-selection menu in any app
 
 ## Data sources
 
@@ -30,6 +32,7 @@ Lexpress prefers free and offline sources and only goes online when it has to.
 | --- | --- | --- |
 | Apple Translation framework | Sentences and paragraphs | On device, free, works offline once the language model is downloaded |
 | Apple Vision | Text recognition in images | On device, images are never uploaded |
+| Google ML Kit (Android) | Sentence translation and text recognition | On device; the Chinese translation model (about 30 MB) is downloaded once |
 | Youdao dictionary JSON endpoint | Word entries and word audio | Public but unofficial endpoint; it may change without notice |
 | MyMemory | Fallback sentence translation | Free tier, limited daily quota |
 
@@ -37,7 +40,7 @@ Lexpress is not affiliated with any of these providers.
 
 ## AI features: bring your own key
 
-AI features are optional. Lexpress ships with no API key and has no server of its own. You register with a provider yourself, paste your API key into Settings, and the app talks to the provider directly from your device. The key is stored in the system Keychain and usage is billed to you by the provider.
+AI features are optional. Lexpress ships with no API key and has no server of its own. You register with a provider yourself, paste your API key into Settings, and the app talks to the provider directly from your device. The key is stored in the system Keychain (on Android, encrypted with the Android Keystore) and usage is billed to you by the provider.
 
 Supported providers:
 
@@ -73,6 +76,17 @@ Pick the `Lexpress-iOS` scheme and run it on a simulator or a device. `LEXPRESS_
 
 Apple's on-device translation does not run in the iOS Simulator, so sentences fall back to the online translator there.
 
+### Android
+
+Requires JDK 17 (Android Studio's bundled JDK works) and the Android SDK.
+
+```bash
+cd android
+./gradlew assembleRelease
+```
+
+The APKs are written to `android/app/build/outputs/apk/release/`, one per CPU type (`arm64-v8a` for almost all current phones). Release builds are signed with the debug key so you can install them directly; use your own signing key before publishing to a store. You can also open `android/` in Android Studio.
+
 ## Repository layout
 
 ```
@@ -86,6 +100,12 @@ apple/
   iOS/               iOS app entry point, camera
   macOS/             macOS app entry point, global hotkey, Services
   Scripts/           Icon generator
+android/
+  app/src/main/java/com/yishulabs/lexpress/
+    core/            Dictionary, translation, OCR, speech, settings
+    ai/              Provider settings, API client, prompts, usage
+    conversation/    Conversations, scenes, storage
+    ui/              Jetpack Compose screens
 ```
 
 ## License
