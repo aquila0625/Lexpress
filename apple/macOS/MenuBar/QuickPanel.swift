@@ -75,8 +75,15 @@ final class QuickPanelModel: ObservableObject {
         reset()
         working = true
         task = Task {
-            let text = (try? await ImageText.recognize(image))?.trimmed ?? ""
+            let text: String
+            do {
+                text = try await ImageText.recognize(image).trimmed
+            } catch {
+                log.error("image recognition failed: \(error.localizedDescription, privacy: .public)")
+                text = ""
+            }
             guard !Task.isCancelled else { return }
+            log.info("image: recognized \(text.count, privacy: .public) chars from \(origin.rawValue, privacy: .public)")
             guard !text.isEmpty else {
                 working = false
                 message = origin != .clipboard && !ScreenCapture.hasPermission
@@ -129,11 +136,43 @@ final class QuickPanelModel: ObservableObject {
         } else {
             let result = await controller.quickTranslate(text)
             guard !Task.isCancelled else { return }
-            translation = result
+            translation = result.map { Self.matchLineFormatting(source: text, translation: $0) }
             if result == nil { message = "翻译失败，请检查网络后重试。" }
         }
         working = false
         log.info("quick panel: \(self.origin.rawValue, privacy: .public) \(text.count, privacy: .public) chars, word \(self.entry != nil, privacy: .public), translated \(self.translation != nil, privacy: .public)")
+    }
+
+    /// 译文保持原文的排版：段落和空行本来就按行对应，这里再把每行开头的缩进、
+    /// 列表符号（- • * 等）和编号（1. 1、 (1) a) 等）补回去，机器翻译常把它们弄丢或改掉。
+    static func matchLineFormatting(source: String, translation: String) -> String {
+        let sourceLines = source.components(separatedBy: "\n")
+        let translatedLines = translation.components(separatedBy: "\n")
+        // 行数对不上时说明翻译合并或拆分了段落，不硬套
+        guard sourceLines.count == translatedLines.count else { return translation }
+        return zip(sourceLines, translatedLines).map { original, translated in
+            let (indent, marker) = lineStart(original)
+            let body = translated.trimmingCharacters(in: .whitespaces)
+            guard !body.isEmpty else { return translated }
+            if marker.isEmpty { return indent + body }
+            // 译文已经自带了列表符号或编号，就保留它，只补缩进
+            if !lineStart(body).marker.isEmpty { return indent + body }
+            return indent + marker + body
+        }.joined(separator: "\n")
+    }
+
+    private static let markerPattern = try! NSRegularExpression(
+        pattern: #"^([ \t\u3000]*)((?:[-*•·▪◦‣–—]|\d{1,3}[.)、．]|[（(]\d{1,3}[)）]|[A-Za-z][.)])[ \t\u3000]*)?"#)
+
+    /// 一行开头的缩进，以及缩进后面的列表符号或编号（连同后面的空格）
+    private static func lineStart(_ line: String) -> (indent: String, marker: String) {
+        let range = NSRange(line.startIndex..., in: line)
+        guard let match = markerPattern.firstMatch(in: line, range: range) else { return ("", "") }
+        func group(_ i: Int) -> String {
+            guard let r = Range(match.range(at: i), in: line) else { return "" }
+            return String(line[r])
+        }
+        return (group(1), group(2))
     }
 
     private func isWordLike(_ text: String) -> Bool {
@@ -167,7 +206,7 @@ struct QuickPanelView: View {
             TextField(model.origin == .input ? "输入单词、句子或一段话，回车翻译" : "原文", text: $model.source, axis: .vertical)
                 .textFieldStyle(.plain)
                 .font(.system(size: 15))
-                .lineLimit(1...6)
+                .lineLimit(1...8)
                 .focused($focused)
                 .onSubmit { model.retranslate() }
                 .id(model.sourceRevision)
@@ -183,8 +222,9 @@ struct QuickPanelView: View {
             if model.resultText != nil { actions }
         }
         .padding(16)
-        .padding(.top, 6)
         .frame(width: 420)
+        .background(Color(nsColor: .windowBackgroundColor), in: .rect(cornerRadius: 16))
+        .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(Color(nsColor: .separatorColor), lineWidth: 0.5))
         .tint(.lxAccent)
         // 主窗口关着时也要能用系统离线翻译
         .translationTask(translator.configuration) { session in
@@ -262,10 +302,10 @@ struct QuickPanelView: View {
         } else if let translation = model.translation {
             ScrollView {
                 Text(translation)
-                    .font(.system(size: 16, weight: .medium))
-                    .lineSpacing(3)
+                    .font(.system(size: 15))
                     .textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 10)
             }
             .frame(maxHeight: 260)
             .fixedSize(horizontal: false, vertical: true)
@@ -315,21 +355,22 @@ struct QuickPanelView: View {
 final class QuickPanel: NSPanel {
     init<Content: View>(rootView: Content) {
         super.init(contentRect: NSRect(x: 0, y: 0, width: 420, height: 160),
-                   styleMask: [.titled, .closable, .fullSizeContentView, .nonactivatingPanel],
+                   styleMask: [.borderless, .nonactivatingPanel],
                    backing: .buffered, defer: false)
-        titlebarAppearsTransparent = true
-        titleVisibility = .hidden
+        // 不用标题栏：标题栏会在内容上方多占一截高度。圆角和背景由 SwiftUI 画
+        backgroundColor = .clear
+        isOpaque = false
+        hasShadow = true
         isFloatingPanel = true
         level = .floating
         hidesOnDeactivate = false
         isReleasedWhenClosed = false
         isMovableByWindowBackground = true
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        standardWindowButton(.closeButton)?.isHidden = true
-        standardWindowButton(.miniaturizeButton)?.isHidden = true
-        standardWindowButton(.zoomButton)?.isHidden = true
         let host = NSHostingController(rootView: rootView)
         host.sizingOptions = .preferredContentSize
+        host.view.wantsLayer = true
+        host.view.layer?.backgroundColor = .clear
         contentViewController = host
     }
 

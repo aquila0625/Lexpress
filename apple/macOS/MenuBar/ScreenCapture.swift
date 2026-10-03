@@ -25,7 +25,13 @@ enum ScreenCapture {
                 continuation.resume()
             }
         }
-        guard let data = try? Data(contentsOf: url) else { return nil }
-        return NSImage(data: data)
+        guard let data = try? Data(contentsOf: url) else {
+            log.info("screenshot: cancelled or no file, status \(process.terminationStatus, privacy: .public)")
+            return nil
+        }
+        let image = NSImage(data: data)
+        let pixels = image?.representations.first.map { "\($0.pixelsWide)x\($0.pixelsHigh)" } ?? "?"
+        log.info("screenshot: \(data.count, privacy: .public) bytes, \(pixels, privacy: .public), permission \(hasPermission, privacy: .public)")
+        return image
     }
 }
