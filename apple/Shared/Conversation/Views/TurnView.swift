@@ -22,7 +22,7 @@ extension Turn {
 }
 
 /// 会话里的一轮。每种内容有固定的样子，看一眼就分得清：
-/// 单词是浅蓝色的词典卡片；句子的原文缩成灰色小气泡，译文在浅绿色卡片里；图片的译文直接覆盖在图上。
+/// 单词是浅蓝色的词典卡片；句子的原文和译文一起放在浅绿色卡片里；图片的译文直接覆盖在图上。
 /// 操作按钮只在最新一轮和被点选的那一轮出现。
 struct TurnView: View {
     let turn: Turn
@@ -39,6 +39,8 @@ struct TurnView: View {
     var showsActions = false
     /// 点一下这一轮：选中它，显示操作按钮
     var onSelect: () -> Void = {}
+    /// 删除这一轮（由会话页弹出确认）
+    var onDelete: () -> Void = {}
 
     @State private var editText = ""
     @State private var copied = false
@@ -50,23 +52,55 @@ struct TurnView: View {
     private var editing: Bool { editingTurn == turn.id }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            if turn.isImage {
-                imageSource
-            } else if editing {
-                editor
-            } else if turn.word == nil {
+        if turn.isImage || turn.word != nil {
+            VStack(alignment: .leading, spacing: 6) {
                 // 单词直接显示成词卡，不再重复一个原文气泡
-                textSource
+                if turn.isImage { imageSource }
+                tagLine
+                result
             }
-            if let tags {
-                Text(tags)
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .trailing)
+        } else {
+            // 一句话或一段话：原文和译文放在同一张浅绿色卡片里，算一组
+            VStack(alignment: .leading, spacing: 8) {
+                if editing {
+                    editor
+                } else {
+                    sentenceSource
+                }
+                tagLine
+                Divider().opacity(0.5)
+                result
+                    .opacity(editing ? 0.4 : 1)
             }
-            result
-                .opacity(editing ? 0.4 : 1)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.lxSentenceCard, in: .rect(cornerRadius: 18))
+            .contextMenu { sourceMenu }
+        }
+    }
+
+    @ViewBuilder
+    private var tagLine: some View {
+        if let tags {
+            Text(tags)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .trailing)
+        }
+    }
+
+    /// 卡片里的原文：灰色小字，最多两行，右边是快捷复制
+    private var sentenceSource: some View {
+        HStack(alignment: .top, spacing: 0) {
+            FoldableText(text: turn.source, font: .system(size: 14), expanded: expanded, foldedLines: 2, onToggle: onToggleExpand)
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(.rect)
+                .onTapGesture(perform: onSelect)
+            CopyButton(text: turn.source, label: "复制原文")
+                .padding(.top, -10)
+                .padding(.trailing, -10)
         }
     }
 
@@ -80,23 +114,6 @@ struct TurnView: View {
 
     // MARK: 原文
 
-    private var textSource: some View {
-        HStack(alignment: .bottom, spacing: 2) {
-            Spacer(minLength: 0)
-            // 原文旁边的快捷复制
-            CopyButton(text: turn.source, label: "复制原文")
-            FoldableText(text: turn.source, font: .system(size: 14), expanded: expanded, alignment: .trailing,
-                         foldedLines: 2, onToggle: onToggleExpand)
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 11)
-                .padding(.vertical, 7)
-                .background(Color.lxSurface, in: UnevenRoundedRectangle(topLeadingRadius: 14, bottomLeadingRadius: 14,
-                                                                         bottomTrailingRadius: 4, topTrailingRadius: 14))
-                .contextMenu { sourceMenu }
-        }
-        .padding(.leading, 20)
-    }
-
     @ViewBuilder
     private var sourceMenu: some View {
         Button("编辑原文", systemImage: "pencil") {
@@ -107,7 +124,7 @@ struct TurnView: View {
         Button("朗读原文", systemImage: "speaker.wave.2") {
             Speaker.shared.toggle(.text(turn.source, isChinese: turn.sourceIsChinese))
         }
-        Button("删除这一轮", systemImage: "trash", role: .destructive) { controller.deleteTurn(turn.id) }
+        Button("删除这一轮", systemImage: "trash", role: .destructive) { onDelete() }
     }
 
     private var editor: some View {
@@ -150,7 +167,7 @@ struct TurnView: View {
         .frame(maxWidth: .infinity, alignment: .trailing)
         .padding(.leading, 56)
         .contextMenu {
-            Button("删除这一轮", systemImage: "trash", role: .destructive) { controller.deleteTurn(turn.id) }
+            Button("删除这一轮", systemImage: "trash", role: .destructive) { onDelete() }
         }
     }
 
@@ -228,6 +245,9 @@ struct TurnView: View {
         .padding(10)
         .background(Color.lxImageCard, in: .rect(cornerRadius: 18))
         .onTapGesture(perform: onSelect)
+        .contextMenu {
+            Button("删除这一轮", systemImage: "trash", role: .destructive) { onDelete() }
+        }
     }
 
     /// 一张图：译文盖在图上，右上角按住看原图，下面是页码和这张图译文的快捷复制
@@ -380,11 +400,6 @@ struct TurnView: View {
                     .foregroundStyle(.secondary)
             }
         }
-        // 译文包在浅绿色卡片里，和蓝色的单词卡片分开
-        .padding(.horizontal, 14)
-        .padding(.vertical, 12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.lxSentenceCard, in: .rect(cornerRadius: 18))
     }
 
     private func actionBar<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {

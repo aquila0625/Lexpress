@@ -30,6 +30,9 @@ struct ConversationView: View {
     @State private var filter: TurnKind?
     /// 点选的那一轮显示操作按钮（最新一轮总是显示）
     @State private var selectedTurn: UUID?
+    /// 左滑露出删除按钮的那一轮；要删除、等确认的那一轮
+    @State private var swipedTurn: String?
+    @State private var deletingTurn: Turn?
     @State private var renaming = false
     @State private var renameText = ""
     @State private var confirmDelete = false
@@ -134,6 +137,8 @@ struct ConversationView: View {
                                     .background(Color.lxSurface, in: .capsule)
                                     .frame(maxWidth: .infinity)
                             }
+                            // 往左滑露出删除按钮，点了再确认
+                            SwipeToDelete(id: turn.id.uuidString, openRow: $swipedTurn, onDelete: { deletingTurn = turn }) {
                             TurnView(turn: turn, controller: controller, editingTurn: $editingTurn,
                                      onOpenWord: { wordToShow = $0 },
                                      onReply: { replyTo = $0 },
@@ -147,8 +152,11 @@ struct ConversationView: View {
                                 },
                                 showsActions: turn.id == session?.turns.last?.id || turn.id == selectedTurn,
                                 onSelect: {
+                                    if swipedTurn != nil { swipedTurn = nil; return }
                                     withAnimation(.snappy) { selectedTurn = selectedTurn == turn.id ? nil : turn.id }
-                                })
+                                },
+                                onDelete: { deletingTurn = turn })
+                            }
                                 .background {
                                     // 跳过来的那一轮闪一下；点选的那一轮有一圈淡淡的边框
                                     let flash = highlighted == turn.id
@@ -203,12 +211,12 @@ struct ConversationView: View {
                 }
                 .onChange(of: session?.turns.count) { old, new in
                     guard let last = session?.turns.last?.id else { return }
-                    if (new ?? 0) > (old ?? 0) {
-                        expandedTurns.insert(last)
-                        // 发了新内容：回到全部，取消点选
-                        filter = nil
-                        selectedTurn = nil
-                    }
+                    // 只在发了新内容时滚到底；删掉一条时停在原处
+                    guard (new ?? 0) > (old ?? 0) else { return }
+                    expandedTurns.insert(last)
+                    // 发了新内容：回到全部，取消点选
+                    filter = nil
+                    selectedTurn = nil
                     withAnimation { position.scrollTo(edge: .bottom) }
                 }
                 .onChange(of: scrollTarget) {
@@ -263,6 +271,19 @@ struct ConversationView: View {
             Button("取消", role: .cancel) {}
             Button("保存") { store.renameSession(controller.currentID, to: renameText) }
         }
+        .confirmationDialog(deletingTurn.map(deleteTitle) ?? "", isPresented: Binding(get: { deletingTurn != nil },
+                                                                                   set: { if !$0 { deletingTurn = nil } }),
+                            titleVisibility: .visible) {
+            Button("删除", role: .destructive) {
+                if let turn = deletingTurn {
+                    withAnimation(.snappy) { controller.deleteTurn(turn.id) }
+                    if selectedTurn == turn.id { selectedTurn = nil }
+                }
+                deletingTurn = nil
+            }
+        } message: {
+            Text("删除后不能恢复。")
+        }
         .confirmationDialog("删除这个会话？", isPresented: $confirmDelete, titleVisibility: .visible) {
             Button("删除", role: .destructive) { controller.deleteSession(controller.currentID) }
         } message: {
@@ -313,7 +334,7 @@ struct ConversationView: View {
             .fixedSize()
             #endif
             if wide { Spacer(minLength: 0) }
-            GlassIconButton(systemName: "list.bullet", label: "输入记录") {
+            GlassIconButton(systemName: "clock.arrow.circlepath", label: "输入记录") {
                 if wide, railAllowed {
                     withAnimation(.snappy) { showOutlineRail.toggle() }
                 } else {
@@ -361,6 +382,15 @@ struct ConversationView: View {
                 .frame(width: 22)
             Text(text).font(.callout).foregroundStyle(.secondary)
         }
+    }
+}
+
+/// 删除确认的标题：说清楚删的是哪一条
+private func deleteTitle(_ turn: Turn) -> String {
+    switch turn.kind {
+    case .word: "删除单词“\(turn.word?.word ?? turn.source)”？"
+    case .image: "删除这 \(turn.images.count) 张图片和译文？"
+    case .sentence: "删除这句话和它的译文？"
     }
 }
 
