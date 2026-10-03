@@ -10,6 +10,8 @@ struct ConversationView: View {
     let onSettings: () -> Void
     /// 宽屏（Mac、iPad 横屏）：左边常驻会话列表，输入记录放在右边一栏
     var wide = false
+    /// 宽度够时输入记录才放在右边一栏，不够时和手机一样弹出
+    var railAllowed = true
 
     @FocusState private var composerFocused: Bool
     @State private var editingTurn: UUID?
@@ -37,7 +39,7 @@ struct ConversationView: View {
         let session = store.session(controller.currentID)
         HStack(spacing: 0) {
             main(session)
-            if wide, showOutlineRail {
+            if wide, railAllowed, showOutlineRail {
                 Divider().ignoresSafeArea()
                 OutlinePanel(turns: session?.turns ?? []) { scrollTarget = $0 } onClose: {
                     withAnimation(.snappy) { showOutlineRail = false }
@@ -195,7 +197,7 @@ struct ConversationView: View {
             #endif
             if wide { Spacer(minLength: 0) }
             GlassIconButton(systemName: "list.bullet", label: "输入记录") {
-                if wide {
+                if wide, railAllowed {
                     withAnimation(.snappy) { showOutlineRail.toggle() }
                 } else {
                     showOutline = true

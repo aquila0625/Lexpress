@@ -62,7 +62,7 @@ struct WideRootView: View {
                 Divider().ignoresSafeArea()
                 ConversationView(controller: controller, store: controller.store, screenHeight: geometry.size.height,
                                  onMenu: {}, onNewSession: { sheet = .newSession }, onSettings: { sheet = .settings },
-                                 wide: true)
+                                 wide: true, railAllowed: geometry.size.width - 300 >= 520 + 270)
                     .background { WashBackground() }
                     .overlay {
                         if dropTargeted {
