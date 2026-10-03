@@ -64,6 +64,8 @@ cd apple
 
 This builds `Q-Translator.app` and copies it to `/Applications`.
 
+If your keychain has an "Apple Development" certificate, `build.sh` signs the app with it (or with `QTRANSLATOR_SIGN_IDENTITY` if you set one). macOS ties the Accessibility and Screen Recording permissions used by the menu bar features to the app's signature, so with a stable certificate you only grant them once. Without a certificate the app is ad-hoc signed and you have to grant them again after every rebuild.
+
 ### iPhone / iPad
 
 ```bash
