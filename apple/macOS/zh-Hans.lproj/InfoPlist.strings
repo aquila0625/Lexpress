@@ -1,3 +1,6 @@
 /* 中文系统里显示中文名 */
 "CFBundleDisplayName" = "快译";
 "CFBundleName" = "快译";
+/* 语音输入 */
+"NSMicrophoneUsageDescription" = "说话来翻译。录音只保存在本机。";
+"NSSpeechRecognitionUsageDescription" = "把你说的话变成文字来翻译。能在本机识别时只在本机识别。";

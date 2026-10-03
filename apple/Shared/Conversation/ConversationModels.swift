@@ -67,6 +67,9 @@ struct Turn: Codable, Identifiable {
     var isOptimizing = false
     /// 发图片时附带的要求（开着 AI 时才有），例如“只翻译菜名”
     var instruction: String?
+    /// 语音输入时录下的原声（文件名）和时长
+    var audioFile: String?
+    var audioDuration: Double?
 
     var isImage: Bool { !images.isEmpty }
 

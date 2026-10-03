@@ -132,4 +132,6 @@ enum SettingsKey {
     static let autoSpeak = "speech.autoSpeak"
     /// 在译文下面显示这次 AI 用了多少 token（默认不显示，用量报表里都有）
     static let showAIUsage = "ai.showUsage"
+    /// 语音输入说完后直接翻译（默认先放进输入框，可以改）
+    static let voiceAutoSend = "voice.autoSend"
 }

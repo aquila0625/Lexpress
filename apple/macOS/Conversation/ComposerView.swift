@@ -12,6 +12,7 @@ struct ComposerView: View {
     let onNeedAI: () -> Void
 
     @State private var showFiles = false
+    @ObservedObject private var voice = VoiceInput.shared
 
     private var isLong: Bool { controller.draft.count > 200 }
     private var hasImages: Bool { !controller.pendingImages.isEmpty }
@@ -30,6 +31,31 @@ struct ComposerView: View {
     }
 
     var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            VoiceErrorBanner()
+            if voice.isListening {
+                VoiceListeningPanel(onFinish: { controller.finishVoice() }, onCancel: { controller.cancelVoice() })
+                    .padding(.bottom, 4)
+            } else {
+                editor
+            }
+        }
+        .glassEffect(.regular, in: .rect(cornerRadius: 22))
+        .padding(.horizontal, 24)
+        .padding(.bottom, 16)
+        .fileImporter(isPresented: $showFiles, allowedContentTypes: [.image], allowsMultipleSelection: true) { result in
+            guard case .success(let urls) = result else { return }
+            let images = urls.compactMap { url -> NSImage? in
+                let scoped = url.startAccessingSecurityScopedResource()
+                defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+                return NSImage(contentsOf: url)
+            }
+            controller.attachImages(images)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .focusInput)) { _ in focused.wrappedValue = true }
+    }
+
+    private var editor: some View {
         VStack(alignment: .leading, spacing: 2) {
             if hasImages {
                 AttachmentTray(controller: controller)
@@ -88,6 +114,14 @@ struct ComposerView: View {
 
                 Spacer(minLength: 0)
 
+                // 输入框没有内容时显示麦克风；⇧⌘S 开始语音输入
+                MicButton(size: 32) { controller.startVoice() }
+                    .keyboardShortcut("s", modifiers: [.command, .shift])
+                    .help("语音输入（⇧⌘S）")
+                    .opacity(canSend ? 0 : 1)
+                    .frame(width: canSend ? 0 : nil)
+                    .disabled(canSend)
+
                 Button {
                     controller.send()
                 } label: {
@@ -101,23 +135,12 @@ struct ComposerView: View {
                 .disabled(!canSend)
                 .keyboardShortcut(.return, modifiers: .command)
                 .accessibilityLabel("翻译")
+                .opacity(canSend ? 1 : 0)
+                .frame(width: canSend ? nil : 0)
             }
             .padding(.horizontal, 8)
             .padding(.bottom, 8)
         }
-        .glassEffect(.regular, in: .rect(cornerRadius: 22))
-        .padding(.horizontal, 24)
-        .padding(.bottom, 16)
-        .fileImporter(isPresented: $showFiles, allowedContentTypes: [.image], allowsMultipleSelection: true) { result in
-            guard case .success(let urls) = result else { return }
-            let images = urls.compactMap { url -> NSImage? in
-                let scoped = url.startAccessingSecurityScopedResource()
-                defer { if scoped { url.stopAccessingSecurityScopedResource() } }
-                return NSImage(contentsOf: url)
-            }
-            controller.attachImages(images)
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .focusInput)) { _ in focused.wrappedValue = true }
     }
 
     private var directionLabel: String {

@@ -6,6 +6,7 @@ struct SettingsView: View {
     @AppStorage(SettingsKey.accent) private var accent = 2
     @AppStorage(SettingsKey.autoSpeak) private var autoSpeak = false
     @AppStorage(SettingsKey.showAIUsage) private var showUsage = false
+    @AppStorage(SettingsKey.voiceAutoSend) private var voiceAutoSend = false
 
     @ObservedObject private var usage = UsageStore.shared
     @State private var testing = false
@@ -70,6 +71,14 @@ struct SettingsView: View {
                     Text("AI 增强（可选）")
                 } footer: {
                     Text("Q-Translator 不提供 AI 额度，也不经过任何中间服务器：你自己在服务商那里注册，把 API Key 填在这里，费用由服务商向你收取。Key 只保存在本机钥匙串。注意 ChatGPT 的会员订阅不包含 API 额度，API Key 要在 OpenAI 开发者平台单独申请。不填也能使用词典、翻译、朗读和图片翻译。AI 用于优化句子翻译和帮你写回复；上面的开关关闭时不会自动优化，只有你点“AI 优化”才会运行。单词和短语只查词典，不用 AI。token 用量默认不显示在译文下面，可以在用量报表里查看。")
+                }
+
+                Section {
+                    Toggle("说完自动翻译", isOn: $voiceAutoSend)
+                } header: {
+                    Text("语音输入")
+                } footer: {
+                    Text("关闭时，说的话先放进输入框，可以改完再翻译。识别在本机完成，录音只保存在本机，可以在会话里回放。")
                 }
 
                 Section("朗读") {

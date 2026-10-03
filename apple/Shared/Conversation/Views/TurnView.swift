@@ -75,6 +75,13 @@ struct TurnView: View {
             VStack(alignment: .leading, spacing: 6) {
                 // 单词直接显示成词卡，不再重复一个原文气泡
                 if turn.isImage { imageSource }
+                if let audio = turn.audioFile {
+                    HStack(spacing: 6) {
+                        Spacer(minLength: 0)
+                        Image(systemName: "mic.fill").font(.caption).foregroundStyle(Color.lxAccent)
+                        AudioReplayButton(name: audio, duration: turn.audioDuration)
+                    }
+                }
                 tagLine
                 result
             }
@@ -109,17 +116,29 @@ struct TurnView: View {
         }
     }
 
-    /// 卡片里的原文：灰色小字，最多两行，右边是快捷复制
+    /// 卡片里的原文：灰色小字，最多两行，右边是快捷复制；语音输入的带麦克风标记和回放
     private var sentenceSource: some View {
-        HStack(alignment: .top, spacing: 0) {
-            FoldableText(text: turn.source, font: .system(size: 14), expanded: expanded, foldedLines: 2, onToggle: onToggleExpand)
-                .foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .contentShape(.rect)
-                .onTapGesture(perform: onSelect)
-            CopyButton(text: turn.source, label: "复制原文")
-                .padding(.top, -10)
-                .padding(.trailing, -10)
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(alignment: .top, spacing: 6) {
+                if turn.audioFile != nil {
+                    Image(systemName: "mic.fill")
+                        .font(.caption)
+                        .foregroundStyle(Color.lxAccent)
+                        .padding(.top, 2)
+                        .accessibilityLabel("语音输入")
+                }
+                FoldableText(text: turn.source, font: .system(size: 14), expanded: expanded, foldedLines: 2, onToggle: onToggleExpand)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(.rect)
+                    .onTapGesture(perform: onSelect)
+                CopyButton(text: turn.source, label: "复制原文")
+                    .padding(.top, -10)
+                    .padding(.trailing, -10)
+            }
+            if let audio = turn.audioFile {
+                AudioReplayButton(name: audio, duration: turn.audioDuration)
+            }
         }
     }
 

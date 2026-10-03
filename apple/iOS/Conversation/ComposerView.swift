@@ -16,6 +16,7 @@ struct ComposerView: View {
     @State private var showFiles = false
     @State private var showFullEditor = false
     @State private var photoItems: [PhotosPickerItem] = []
+    @ObservedObject private var voice = VoiceInput.shared
 
     private var isLong: Bool { controller.draft.count > 200 }
     private var hasImages: Bool { !controller.pendingImages.isEmpty }
@@ -34,6 +35,22 @@ struct ComposerView: View {
     }
 
     var body: some View {
+        VStack(spacing: 0) {
+            VoiceErrorBanner()
+            if voice.isListening {
+                VoiceListeningPanel(onFinish: { controller.finishVoice() }, onCancel: { controller.cancelVoice() })
+            } else {
+                editor
+            }
+        }
+        .glassEffect(.regular, in: .rect(cornerRadius: 26))
+        .padding(.horizontal, 10)
+        .padding(.bottom, 4)
+        .modifier(Pickers(controller: controller, focused: focused, showCamera: $showCamera, showPhotos: $showPhotos,
+                          showFiles: $showFiles, showFullEditor: $showFullEditor, photoItems: $photoItems))
+    }
+
+    private var editor: some View {
         VStack(spacing: 0) {
             if hasImages {
                 AttachmentTray(controller: controller)
@@ -96,6 +113,13 @@ struct ComposerView: View {
 
                 Spacer(minLength: 0)
 
+                if !canSend {
+                    // 输入框没有内容时，发送按钮换成麦克风
+                    MicButton(size: 38) {
+                        focused.wrappedValue = false
+                        controller.startVoice()
+                    }
+                } else {
                 Button {
                     controller.send()
                 } label: {
@@ -109,13 +133,26 @@ struct ComposerView: View {
                 .buttonStyle(.plain)
                 .disabled(!canSend)
                 .accessibilityLabel("翻译")
+                }
             }
             .padding(.horizontal, 4)
             .padding(.bottom, 2)
         }
-        .glassEffect(.regular, in: .rect(cornerRadius: 26))
-        .padding(.horizontal, 10)
-        .padding(.bottom, 4)
+    }
+}
+
+/// 加号菜单弹出的拍照、相册、文件和全屏编辑
+private struct Pickers: ViewModifier {
+    @ObservedObject var controller: ConversationController
+    var focused: FocusState<Bool>.Binding
+    @Binding var showCamera: Bool
+    @Binding var showPhotos: Bool
+    @Binding var showFiles: Bool
+    @Binding var showFullEditor: Bool
+    @Binding var photoItems: [PhotosPickerItem]
+
+    func body(content: Content) -> some View {
+        content
         .photosPicker(isPresented: $showPhotos, selection: $photoItems, maxSelectionCount: 10, matching: .images)
         .onChange(of: photoItems) {
             let items = photoItems
@@ -164,7 +201,9 @@ struct ComposerView: View {
             .tint(.lxAccent)
         }
     }
+}
 
+extension ComposerView {
     private var directionLabel: String {
         switch controller.direction {
         case .auto: "自动"

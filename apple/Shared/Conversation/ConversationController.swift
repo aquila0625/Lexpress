@@ -7,12 +7,22 @@ final class ConversationController: ObservableObject {
     let translator = SystemTranslator()
 
     @Published var currentID: UUID
-    @Published var draft = ""
+    @Published var draft = "" {
+        // 把输入框清空了：语音输入留下的原声也不要了
+        didSet {
+            if draft.trimmed.isEmpty, let audio = pendingAudio {
+                ConversationStore.deleteMediaFile(audio.name)
+                pendingAudio = nil
+            }
+        }
+    }
     @Published var direction: Direction = .auto
     /// 系统离线翻译模型可以下载但还没下载
     @Published var offlineDownloadable = false
     /// 选好还没发出去的图片，显示在输入框上方，可以预览、排序、删除
     @Published var pendingImages: [PendingImage] = []
+    /// 语音输入留下的原声，跟着下一次发送的文字一起保存；把输入框清空就丢掉
+    @Published var pendingAudio: (name: String, duration: Double)?
 
     struct PendingImage: Identifiable {
         let id = UUID()
@@ -92,6 +102,35 @@ final class ConversationController: ObservableObject {
 
     // MARK: 发送
 
+    // MARK: 语音输入
+
+    /// 按翻译方向决定识别哪种语言；“自动”时用上次说的语言
+    var voiceLanguage: VoiceInput.Language? {
+        switch direction {
+        case .auto: nil
+        case .englishToChinese: .english
+        case .chineseToEnglish: .chinese
+        }
+    }
+
+    func startVoice() {
+        Task { await VoiceInput.shared.start(preferred: voiceLanguage) }
+    }
+
+    /// 说完了：文字放进输入框（可以改），原声留着跟这次发送一起保存；设置了“说完自动翻译”就直接发出去
+    func finishVoice() {
+        let result = VoiceInput.shared.stop()
+        guard !result.text.isEmpty else { return }
+        if let old = pendingAudio, draft.trimmed.isEmpty { ConversationStore.deleteMediaFile(old.name) }
+        draft = draft.trimmed.isEmpty ? result.text : draft.trimmed + " " + result.text
+        if let audio = result.audio { pendingAudio = (audio, result.duration) }
+        if UserDefaults.standard.bool(forKey: SettingsKey.voiceAutoSend) { send() }
+    }
+
+    func cancelVoice() {
+        VoiceInput.shared.cancel()
+    }
+
     /// 选好的图片先放在输入框上方，不直接发送
     func attachImages(_ images: [PlatformImage]) {
         pendingImages += images.map { PendingImage(image: $0) }
@@ -121,8 +160,12 @@ final class ConversationController: ObservableObject {
         }
         let text = draft.trimmed
         guard !text.isEmpty else { return }
+        let audio = pendingAudio
+        pendingAudio = nil
         draft = ""
-        let turn = Turn(source: text, sourceIsChinese: sourceIsChinese(text), manualDirection: direction != .auto)
+        var turn = Turn(source: text, sourceIsChinese: sourceIsChinese(text), manualDirection: direction != .auto)
+        turn.audioFile = audio?.name
+        turn.audioDuration = audio?.duration
         let sessionID = currentID
         store.appendTurn(turn, to: sessionID)
         Task { await process(sessionID, turn.id) }

@@ -225,10 +225,18 @@ final class ConversationStore: ObservableObject {
 
     func deleteTurn(_ sessionID: UUID, _ turnID: UUID) {
         turn(sessionID, turnID)?.images.forEach { deleteImageFile($0.fileName) }
+        if let audio = turn(sessionID, turnID)?.audioFile { Self.deleteMediaFile(audio) }
         updateSession(sessionID) { $0.turns.removeAll { $0.id == turnID } }
     }
 
-    // MARK: 图片文件
+    // MARK: 图片和录音文件
+
+    /// 录音等其他文件和图片放在同一个文件夹
+    static func mediaURL(_ name: String) -> URL { imagesDirectory.appendingPathComponent(name) }
+
+    static func deleteMediaFile(_ name: String) {
+        try? FileManager.default.removeItem(at: mediaURL(name))
+    }
 
     static func saveImage(_ image: PlatformImage) -> String? {
         guard let data = image.storageData else { return nil }
