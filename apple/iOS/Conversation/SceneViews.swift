@@ -104,10 +104,12 @@ struct SceneEditorView: View {
                 }
             }
             .confirmationDialog("删除这个场景？", isPresented: $confirmDelete, titleVisibility: .visible) {
-                Button("删除场景", role: .destructive) {
+                Button("删除场景，会话移到最下面", role: .destructive) {
                     if let sceneID { store.deleteScene(sceneID) }
                     dismiss()
                 }
+            } message: {
+                Text("要连同会话一起删除，请在列表里左滑场景，再勾选“同时删除会话”。")
             }
         }
         .presentationDragIndicator(.visible)

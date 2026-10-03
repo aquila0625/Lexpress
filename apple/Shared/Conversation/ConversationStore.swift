@@ -164,10 +164,17 @@ final class ConversationStore: ObservableObject {
         save()
     }
 
-    /// 删除场景时，里面的会话移到“未分类”，不会被删掉
-    func deleteScene(_ id: UUID) {
+    /// 删除场景。默认里面的会话移到列表最下面；deleteSessions 为 true 时连同会话一起删除
+    func deleteScene(_ id: UUID, deleteSessions: Bool = false) {
+        if deleteSessions {
+            for session in sessions where session.sceneID == id {
+                session.turns.flatMap(\.images).forEach { deleteImageFile($0.fileName) }
+            }
+            sessions.removeAll { $0.sceneID == id }
+        } else {
+            for i in sessions.indices where sessions[i].sceneID == id { sessions[i].sceneID = nil }
+        }
         scenes.removeAll { $0.id == id }
-        for i in sessions.indices where sessions[i].sceneID == id { sessions[i].sceneID = nil }
         save()
     }
 

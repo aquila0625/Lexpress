@@ -14,6 +14,9 @@ struct ReplyView: View {
     @State private var error: String?
     @State private var change = ""
     @State private var copied = false
+    @State private var showFullReceived = false
+    /// 生成这条回复时用的服务商和模型
+    @State private var usedModel = ""
     @FocusState private var inputFocused: Bool
 
     var body: some View {
@@ -29,24 +32,30 @@ struct ReplyView: View {
 
                 VStack(alignment: .leading, spacing: 6) {
                     SectionHeader(title: "对方的话")
-                    Text(received).font(.callout).lineLimit(4)
-                    Text(receivedTranslation).font(.footnote).foregroundStyle(.secondary).lineLimit(3)
+                    Text(received).font(.callout).lineLimit(showFullReceived ? nil : 4).textSelection(.enabled)
+                    Text(receivedTranslation).font(.footnote).foregroundStyle(.secondary)
+                        .lineLimit(showFullReceived ? nil : 3).textSelection(.enabled)
+                    if received.count > 120 || receivedTranslation.count > 90 {
+                        Button {
+                            withAnimation(.snappy) { showFullReceived.toggle() }
+                        } label: {
+                            Label(showFullReceived ? "收起" : "展开全文", systemImage: showFullReceived ? "chevron.up" : "chevron.down")
+                                .font(.footnote.weight(.semibold))
+                                .frame(minHeight: 36)
+                                .contentShape(.rect)
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(Color.lxAccent)
+                    }
                 }
                 .padding(14)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(Color.lxSurface, in: .rect(cornerRadius: 18))
 
-                Picker("回复方式", selection: $kind) {
-                    ForEach(AITasks.ReplyKind.allCases) { Text($0.title).tag($0) }
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-
-                Picker("怎么写", selection: $mode) {
-                    ForEach(AITasks.ReplyMode.allCases) { Text($0.title).tag($0) }
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
+                ChoiceBar(title: "回复方式", options: AITasks.ReplyKind.allCases.map { ($0, $0.title, $0 == .message ? "message" : "envelope") },
+                          selection: $kind, tint: .lxAccent, soft: .lxAccentSoft)
+                ChoiceBar(title: "怎么写", options: AITasks.ReplyMode.allCases.map { ($0, $0.title, $0 == .points ? "list.bullet" : "pencil.line") },
+                          selection: $mode, tint: .lxAI, soft: .lxAISoft)
 
                 VStack(alignment: .leading, spacing: 6) {
                     SectionHeader(title: mode == .points ? "想说什么" : "我的草稿")
@@ -104,7 +113,7 @@ struct ReplyView: View {
             .background(Color.lxAISoft, in: .rect(cornerRadius: 18))
 
         if let usage = reply.usage {
-            Text(usage.summary)
+            Text(usedModel + " · " + usage.summary)
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(Color.lxAI)
         }
@@ -164,6 +173,7 @@ struct ReplyView: View {
     /// change 为 nil 时从头生成；否则在上一版回复的基础上修改
     private func generate(change: String?) {
         let config = AIClient.currentConfig
+        usedModel = "\(config.provider.title) · \(config.model)"
         let previous = change == nil ? nil : reply?.text
         working = true
         error = nil
@@ -175,6 +185,43 @@ struct ReplyView: View {
                                                 previous: previous, change: change, config: config)
             } catch {
                 self.error = error.localizedDescription
+            }
+        }
+    }
+}
+
+/// 大一点的分段选择：选中项用颜色高亮。两组用不同颜色，一眼能分开
+struct ChoiceBar<Value: Hashable>: View {
+    let title: String
+    let options: [(Value, String, String)]
+    @Binding var selection: Value
+    let tint: Color
+    let soft: Color
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            SectionHeader(title: title)
+            HStack(spacing: 8) {
+                ForEach(options, id: \.0) { value, label, icon in
+                    let on = value == selection
+                    Button {
+                        withAnimation(.snappy) { selection = value }
+                    } label: {
+                        Label(label, systemImage: icon)
+                            .font(.callout.weight(.semibold))
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.8)
+                            .foregroundStyle(on ? tint : .secondary)
+                            .frame(maxWidth: .infinity, minHeight: 50)
+                            .background(on ? soft : Color.secondary.opacity(0.08), in: .rect(cornerRadius: 14))
+                            .overlay {
+                                RoundedRectangle(cornerRadius: 14).stroke(on ? tint : .clear, lineWidth: 1.5)
+                            }
+                            .contentShape(.rect)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityAddTraits(on ? .isSelected : [])
+                }
             }
         }
     }

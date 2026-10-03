@@ -9,9 +9,29 @@ struct TurnView: View {
     let onReply: (SentenceResult) -> Void
     let onEditImage: (UUID) -> Void
     let onNeedAI: () -> Void
+    /// 长内容是否展开：刚翻译出来的展开，重新打开会话时收起
+    let expanded: Bool
+    let onToggleExpand: () -> Void
 
     @State private var editText = ""
     @State private var copied = false
+    @State private var showBefore = false
+
+    /// 超过大约 4 行就算长内容，可以收起
+    static func isLong(_ text: String) -> Bool {
+        text.count > 120 || text.filter { $0 == "\n" }.count >= 4
+    }
+
+    private func expandButton(_ text: String) -> some View {
+        Button(action: onToggleExpand) {
+            Label(expanded ? "收起" : "展开全文", systemImage: expanded ? "chevron.up" : "chevron.down")
+                .font(.footnote.weight(.semibold))
+                .frame(minHeight: 36)
+                .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(Color.lxAccent)
+    }
 
     private var editing: Bool { editingTurn == turn.id }
 
@@ -43,9 +63,13 @@ struct TurnView: View {
     // MARK: 原文
 
     private var textSource: some View {
-        Text(turn.source)
-            .font(.system(size: 16))
-            .textSelection(.enabled)
+        VStack(alignment: .trailing, spacing: 2) {
+            Text(turn.source)
+                .font(.system(size: 16))
+                .lineLimit(expanded ? nil : 4)
+                .textSelection(.enabled)
+            if Self.isLong(turn.source) { expandButton(turn.source) }
+        }
             .padding(.horizontal, 14)
             .padding(.vertical, 10)
             .background(Color.lxAccentSoft, in: UnevenRoundedRectangle(topLeadingRadius: 20, bottomLeadingRadius: 20,
@@ -188,7 +212,9 @@ struct TurnView: View {
                     if item.done {
                         Text(item.translation)
                             .font(.system(size: 17, weight: .medium))
+                            .lineLimit(expanded ? nil : 4)
                             .textSelection(.enabled)
+                        if Self.isLong(item.translation) { expandButton(item.translation) }
                     } else {
                         HStack(spacing: 8) {
                             ProgressView().controlSize(.small)
@@ -253,13 +279,31 @@ struct TurnView: View {
             Text(sentence.displayed)
                 .font(.system(size: 19, weight: .medium))
                 .lineSpacing(4)
+                .lineLimit(expanded ? nil : 4)
                 .textSelection(.enabled)
+            if Self.isLong(sentence.displayed) { expandButton(sentence.displayed) }
             if sentence.showsAI {
                 if sentence.aiTranslation != sentence.translation {
-                    (Text("优化前　").fontWeight(.semibold) + Text(sentence.translation))
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                        .textSelection(.enabled)
+                    // 优化前的译文默认折叠
+                    Button {
+                        withAnimation(.snappy) { showBefore.toggle() }
+                    } label: {
+                        Label(showBefore ? "收起优化前" : "查看优化前的译文", systemImage: showBefore ? "chevron.up" : "chevron.right")
+                            .font(.footnote.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                            .frame(minHeight: 36)
+                            .contentShape(.rect)
+                    }
+                    .buttonStyle(.plain)
+                    if showBefore {
+                        Text(sentence.translation)
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                            .textSelection(.enabled)
+                            .padding(10)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(Color.lxSurface, in: .rect(cornerRadius: 12))
+                    }
                 } else {
                     Text("AI 认为原译文无需修改").font(.footnote).foregroundStyle(.secondary)
                 }

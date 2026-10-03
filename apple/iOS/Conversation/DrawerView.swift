@@ -22,6 +22,9 @@ struct DrawerView: View {
     /// 拖着会话停在哪个场景上；停够 1 秒后 armedScene 就是它，标题高亮并自动展开
     @State private var hoverScene: String?
     @State private var armedScene: String?
+    /// 左滑露出删除按钮的那一行（同一时间只开一行）
+    @State private var swipedRow: String?
+    @State private var deletingScene: SceneGroup?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -58,7 +61,8 @@ struct DrawerView: View {
             }
 
             if editing {
-                DrawerEditList(store: store, onEditScene: { onAction(.editScene($0)) }, onNewScene: { onAction(.newScene) })
+                DrawerEditList(store: store, onEditScene: { onAction(.editScene($0)) }, onNewScene: { onAction(.newScene) },
+                               onDeleteSession: { deleting = $0 }, onDeleteScene: { deletingScene = $0 })
             } else {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 2, pinnedViews: [.sectionHeaders]) {
@@ -111,7 +115,10 @@ struct DrawerView: View {
                             titleVisibility: .visible) {
             Button("删除", role: .destructive) { if let deleting { controller.deleteSession(deleting.id) } }
         } message: {
-            Text("会话里的翻译和图片都会被删除。")
+            Text("会话里的翻译和图片都会被删除，不能恢复。")
+        }
+        .sheet(item: $deletingScene) { scene in
+            DeleteSceneSheet(controller: controller, store: store, scene: scene)
         }
     }
 
@@ -165,6 +172,24 @@ struct DrawerView: View {
                 // 空白的吸顶标题：滑到这里时把上一个场景的标题顶走，免得看起来像属于那个场景
                 Color.lxBackground.frame(height: store.scenes.isEmpty ? 0 : 14)
             }
+        } else if !store.scenes.isEmpty {
+            // 没有“不属于场景”的会话时，留一块地方，把会话拖到这里就移出场景
+            let armed = armedScene == key(nil)
+            Label(armed ? "松手移出场景" : "拖到这里，移出场景", systemImage: "tray.and.arrow.down")
+                .font(.footnote)
+                .foregroundStyle(armed ? Color.lxAccent : .secondary)
+                .frame(maxWidth: .infinity, minHeight: 52)
+                .background {
+                    RoundedRectangle(cornerRadius: 14)
+                        .strokeBorder(armed ? Color.lxAccent : Color.secondary.opacity(0.35),
+                                      style: StrokeStyle(lineWidth: 1.5, dash: armed ? [] : [5, 4]))
+                        .background(armed ? Color.lxAccentSoft : Color.clear, in: .rect(cornerRadius: 14))
+                }
+                .padding(.top, 16)
+                .contentShape(.rect)
+                .dropDestination(for: String.self) { items, _ in
+                    drop(items, into: nil, before: nil)
+                } isTargeted: { hover(nil, $0) }
         }
     }
 
@@ -203,8 +228,20 @@ struct DrawerView: View {
     /// 场景标题：点左边展开或收起；右边是“在这个场景里新建会话”和“编辑场景”。往上滑时吸在顶部。
     private func sceneHeader(_ scene: SceneGroup, count: Int, collapsed: Bool) -> some View {
         let armed = armedScene == key(scene)
-        return HStack(spacing: 4) {
+        return SwipeToDelete(id: "h-" + key(scene), openRow: $swipedRow, onDelete: { deletingScene = scene }) {
+            sceneHeaderContent(scene, count: count, collapsed: collapsed, armed: armed)
+        }
+        .padding(.top, 4)
+        // 把会话拖到场景标题上：移到这个场景的最上面
+        .dropDestination(for: String.self) { items, _ in
+            drop(items, into: scene, before: nil)
+        } isTargeted: { hover(scene, $0) }
+    }
+
+    private func sceneHeaderContent(_ scene: SceneGroup, count: Int, collapsed: Bool, armed: Bool) -> some View {
+        HStack(spacing: 4) {
             Button {
+                if swipedRow != nil { swipedRow = nil; return }
                 withAnimation(.snappy) { setCollapsed(scene, !collapsed) }
             } label: {
                 HStack(spacing: 10) {
@@ -240,19 +277,23 @@ struct DrawerView: View {
             .accessibilityLabel("编辑场景\(scene.name)")
         }
         .padding(.horizontal, 6)
-        .background(armed ? Color.lxAccentSoft : Color.lxBackground, in: .rect(cornerRadius: 14))
+        // 淡淡的底色，和下面的会话区分开
+        .background(armed ? Color.lxAccentSoft : Color.lxSurface, in: .rect(cornerRadius: 14))
         .overlay {
             if armed { RoundedRectangle(cornerRadius: 14).stroke(Color.lxAccent, lineWidth: 2) }
         }
         .contentShape(.rect)
-        // 把会话拖到场景标题上：移到这个场景的最上面
-        .dropDestination(for: String.self) { items, _ in
-            drop(items, into: scene, before: nil)
-        } isTargeted: { hover(scene, $0) }
     }
 
     private func sessionRow(_ session: ChatSession, snippet: String? = nil) -> some View {
+        SwipeToDelete(id: "s-" + session.id.uuidString, openRow: $swipedRow, onDelete: { deleting = session }) {
+            sessionRowContent(session, snippet: snippet)
+        }
+    }
+
+    private func sessionRowContent(_ session: ChatSession, snippet: String?) -> some View {
         Button {
+            if swipedRow != nil { swipedRow = nil; return }
             controller.select(session.id)
             onSelect()
         } label: {
@@ -270,6 +311,7 @@ struct DrawerView: View {
             .padding(.trailing, 10)
             .frame(minHeight: 50)
             .background(rowBackground(session), in: .rect(cornerRadius: 14))
+            .background(Color.lxBackground, in: .rect(cornerRadius: 14))
             .contentShape(.rect)
         }
         .buttonStyle(.plain)
@@ -330,6 +372,8 @@ struct DrawerEditList: View {
     @ObservedObject var store: ConversationStore
     let onEditScene: (UUID) -> Void
     let onNewScene: () -> Void
+    let onDeleteSession: (ChatSession) -> Void
+    let onDeleteScene: (SceneGroup) -> Void
 
     @State private var tab = 0
 
@@ -397,7 +441,9 @@ struct DrawerEditList: View {
                         }
                     }
                     .onMove { store.moveScenes(from: $0, to: $1) }
-                    .onDelete { offsets in offsets.map { store.scenes[$0].id }.forEach(store.deleteScene) }
+                    .onDelete { offsets in
+                        if let i = offsets.first { onDeleteScene(store.scenes[i]) }
+                    }
 
                     Button { onNewScene() } label: {
                         Label("新建场景", systemImage: "plus")
@@ -428,7 +474,151 @@ struct DrawerEditList: View {
     private func deleteSessions(at offsets: IndexSet) {
         let list = rows
         for i in offsets {
-            if case .session(let session) = list[i] { store.deleteSession(session.id) }
+            if case .session(let session) = list[i] { onDeleteSession(session) }
+        }
+    }
+}
+
+/// 左滑露出红色“删除”按钮；点按钮后由调用方弹出确认
+struct SwipeToDelete<Content: View>: View {
+    let id: String
+    @Binding var openRow: String?
+    let onDelete: () -> Void
+    @ViewBuilder let content: Content
+
+    @State private var drag: CGFloat = 0
+    private let buttonWidth: CGFloat = 76
+
+    var body: some View {
+        let open = openRow == id
+        let offset = min(0, max(-buttonWidth - 24, (open ? -buttonWidth : 0) + drag))
+        ZStack(alignment: .trailing) {
+            if offset < 0 {
+                Button {
+                    openRow = nil
+                    onDelete()
+                } label: {
+                    VStack(spacing: 2) {
+                        Image(systemName: "trash")
+                        Text("删除").font(.caption.weight(.semibold))
+                    }
+                    .foregroundStyle(.white)
+                    .frame(width: buttonWidth)
+                    .frame(maxHeight: .infinity)
+                    .background(Color.red, in: .rect(cornerRadius: 14))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("删除")
+            }
+            content.offset(x: offset)
+        }
+        // 只认横向滑动的手势，不和列表的上下滚动、长按拖动抢
+        .gesture(HorizontalPan(
+            onChange: { drag = $0 },
+            onEnd: { translation in
+                withAnimation(.snappy) {
+                    let end = (open ? -buttonWidth : 0) + translation
+                    openRow = end < -buttonWidth / 2 ? id : (open ? nil : openRow)
+                    drag = 0
+                }
+            }
+        ))
+        .accessibilityAction(named: "删除") { onDelete() }
+    }
+}
+
+/// 删除场景的确认：可以勾选“连同里面的会话一起删除”，默认不勾选
+struct DeleteSceneSheet: View {
+    @ObservedObject var controller: ConversationController
+    @ObservedObject var store: ConversationStore
+    let scene: SceneGroup
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var alsoSessions = false
+
+    var body: some View {
+        let count = store.sessions(in: scene.id).count
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(spacing: 12) {
+                SceneCoverView(cover: scene.cover, size: 44)
+                Text("删除场景“\(scene.name)”？").font(.title3.weight(.bold))
+            }
+            if count > 0 {
+                Button {
+                    withAnimation(.snappy) { alsoSessions.toggle() }
+                } label: {
+                    HStack(alignment: .top, spacing: 10) {
+                        Image(systemName: alsoSessions ? "checkmark.square.fill" : "square")
+                            .font(.title3)
+                            .foregroundStyle(alsoSessions ? Color.red : .secondary)
+                        Text("同时删除这个场景里的 \(count) 个会话").font(.body)
+                    }
+                    .frame(minHeight: 44)
+                    .contentShape(.rect)
+                }
+                .buttonStyle(.plain)
+                .accessibilityAddTraits(alsoSessions ? .isSelected : [])
+                if alsoSessions {
+                    Label("这 \(count) 个会话和里面所有的翻译、图片都会被删除，不能恢复。", systemImage: "exclamationmark.triangle.fill")
+                        .font(.callout.weight(.semibold))
+                        .foregroundStyle(.red)
+                } else {
+                    Text("不勾选时，里面的会话会移到列表最下面，不会被删除。")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                }
+            } else {
+                Text("这个场景里没有会话。").font(.callout).foregroundStyle(.secondary)
+            }
+            HStack(spacing: 12) {
+                Button { dismiss() } label: {
+                    Text("取消").frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.glass)
+                Button(role: .destructive) {
+                    controller.deleteScene(scene.id, deleteSessions: alsoSessions)
+                    dismiss()
+                } label: {
+                    Text(alsoSessions ? "删除场景和会话" : "删除场景").frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.glassProminent)
+                .tint(.red)
+            }
+            .controlSize(.large)
+        }
+        .padding(24)
+        .presentationDetents([.height(alsoSessions ? 330 : 300)])
+        .presentationDragIndicator(.visible)
+    }
+}
+
+/// 只在横向滑动时才开始的拖动手势（UIKit 的 pan），竖着滑仍然交给列表滚动
+struct HorizontalPan: UIGestureRecognizerRepresentable {
+    let onChange: (CGFloat) -> Void
+    let onEnd: (CGFloat) -> Void
+
+    func makeUIGestureRecognizer(context: Context) -> UIPanGestureRecognizer {
+        let recognizer = UIPanGestureRecognizer()
+        recognizer.delegate = context.coordinator
+        return recognizer
+    }
+
+    func handleUIGestureRecognizerAction(_ recognizer: UIPanGestureRecognizer, context: Context) {
+        let x = recognizer.translation(in: recognizer.view).x
+        switch recognizer.state {
+        case .changed: onChange(x)
+        case .ended, .cancelled, .failed: onEnd(x)
+        default: break
+        }
+    }
+
+    func makeCoordinator(converter: CoordinateSpaceConverter) -> Coordinator { Coordinator() }
+
+    final class Coordinator: NSObject, UIGestureRecognizerDelegate {
+        func gestureRecognizerShouldBegin(_ recognizer: UIGestureRecognizer) -> Bool {
+            guard let pan = recognizer as? UIPanGestureRecognizer else { return false }
+            let velocity = pan.velocity(in: pan.view)
+            return abs(velocity.x) > abs(velocity.y) * 1.2
         }
     }
 }

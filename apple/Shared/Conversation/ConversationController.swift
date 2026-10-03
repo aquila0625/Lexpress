@@ -39,6 +39,18 @@ final class ConversationController: ObservableObject {
         select(session.id)
     }
 
+    func deleteScene(_ id: UUID, deleteSessions: Bool) {
+        let removesCurrent = deleteSessions && store.session(currentID)?.sceneID == id
+        store.deleteScene(id, deleteSessions: deleteSessions)
+        if removesCurrent {
+            if let next = store.sessions.max(by: { $0.updatedAt < $1.updatedAt }) {
+                select(next.id)
+            } else {
+                currentID = store.createSession(title: nil, sceneID: nil, aiEnabled: AISettings.shared.autoCalibrate).id
+            }
+        }
+    }
+
     func deleteSession(_ id: UUID) {
         store.deleteSession(id)
         if currentID == id {

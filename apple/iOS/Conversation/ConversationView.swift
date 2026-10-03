@@ -15,6 +15,8 @@ struct ConversationView: View {
     @State private var scrollTarget: UUID?
     /// 从输入记录跳过来的那一轮，短暂高亮
     @State private var highlighted: UUID?
+    /// 这次打开后新翻译的轮次默认展开；重新打开会话时长内容都收起
+    @State private var expandedTurns: Set<UUID> = []
     @State private var renaming = false
     @State private var renameText = ""
     @State private var confirmDelete = false
@@ -35,15 +37,18 @@ struct ConversationView: View {
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 26) {
-                        if let session, session.turns.isEmpty {
-                            emptyState(session)
-                        }
                         ForEach(session?.turns ?? []) { turn in
                             TurnView(turn: turn, controller: controller, editingTurn: $editingTurn,
                                      onOpenWord: { wordToShow = $0 },
                                      onReply: { replyTo = $0 },
                                      onEditImage: { editingImage = ImageRef(turnID: turn.id, imageID: $0) },
-                                     onNeedAI: onSettings)
+                                     onNeedAI: onSettings,
+                                expanded: expandedTurns.contains(turn.id),
+                                onToggleExpand: {
+                                    withAnimation(.snappy) {
+                                        if expandedTurns.contains(turn.id) { expandedTurns.remove(turn.id) } else { expandedTurns.insert(turn.id) }
+                                    }
+                                })
                                 .background {
                                     RoundedRectangle(cornerRadius: 20)
                                         .fill(Color.lxAccent.opacity(highlighted == turn.id ? 0.14 : 0))
@@ -60,10 +65,16 @@ struct ConversationView: View {
                 }
                 .scrollDismissesKeyboard(.interactively)
                 .defaultScrollAnchor(.bottom)
-                .onChange(of: session?.turns.count) {
-                    if let last = session?.turns.last?.id {
-                        withAnimation { proxy.scrollTo(last, anchor: .bottom) }
+                .overlay {
+                    // 空会话的提示放在可见区域中间，不随滚动贴底
+                    if let session, session.turns.isEmpty {
+                        emptyState(session).padding(.horizontal, 16)
                     }
+                }
+                .onChange(of: session?.turns.count) { old, new in
+                    guard let last = session?.turns.last?.id else { return }
+                    if (new ?? 0) > (old ?? 0) { expandedTurns.insert(last) }
+                    withAnimation { proxy.scrollTo(last, anchor: .bottom) }
                 }
                 .onChange(of: scrollTarget) {
                     guard let target = scrollTarget else { return }
@@ -80,6 +91,7 @@ struct ConversationView: View {
                 }
                 .onChange(of: controller.currentID) {
                     editingTurn = nil
+                    expandedTurns = []
                     if let last = store.session(controller.currentID)?.turns.last?.id {
                         proxy.scrollTo(last, anchor: .bottom)
                     }
@@ -159,15 +171,35 @@ struct ConversationView: View {
     }
 
     private func emptyState(_ session: ChatSession) -> some View {
-        VStack(spacing: 8) {
-            Text(session.title).font(.title3.weight(.bold))
-            Text("输入一句话开始，这个会话里的每次翻译都会留在这里。\n也可以点左下角的加号拍照或选图片。")
-                .font(.callout)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
+        VStack(spacing: 18) {
+            Image(systemName: "character.bubble")
+                .font(.system(size: 34, weight: .medium))
+                .foregroundStyle(Color.lxAccent)
+                .frame(width: 68, height: 68)
+                .background(Color.lxAccentSoft, in: .rect(cornerRadius: 20))
+            VStack(spacing: 4) {
+                Text(session.title).font(.title3.weight(.bold))
+                Text("在下面输入，开始翻译").font(.callout).foregroundStyle(.secondary)
+            }
+            VStack(alignment: .leading, spacing: 12) {
+                tip("text.cursor", "单词、句子或整段文字都可以")
+                tip("plus.circle", "点左下角的 + 拍照或选图片")
+                tip("tray.full", "每次翻译都会保存在这个会话里")
+            }
+            .padding(16)
+            .background(Color.lxSurface, in: .rect(cornerRadius: 18))
         }
         .frame(maxWidth: .infinity)
-        .padding(.top, 100)
+    }
+
+    private func tip(_ icon: String, _ text: String) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: icon)
+                .font(.callout)
+                .foregroundStyle(Color.lxAccent)
+                .frame(width: 22)
+            Text(text).font(.callout).foregroundStyle(.secondary)
+        }
     }
 }
 
