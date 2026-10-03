@@ -82,6 +82,7 @@ final class QuickPanelModel: ObservableObject {
             source = text
             if origin == .recognize {
                 Clipboard.copy(text)
+                ClipboardWatcher.markOwnWrite()
                 working = false
                 message = "已识别并复制到剪贴板。需要翻译就按回车。"
             } else {
@@ -280,7 +281,10 @@ struct QuickPanelView: View {
     private var actions: some View {
         HStack(spacing: 14) {
             Button {
-                if let text = model.resultText { Clipboard.copy(text) }
+                if let text = model.resultText {
+                    Clipboard.copy(text)
+                    ClipboardWatcher.markOwnWrite()
+                }
                 copied = true
             } label: {
                 Label(copied ? "已复制" : "复制", systemImage: copied ? "checkmark" : "doc.on.doc")
@@ -328,8 +332,9 @@ final class QuickPanel: NSPanel {
         orderOut(nil)
     }
 
-    /// 在某个屏幕坐标附近弹出：放在这一点的下方，超出屏幕就往回挪
-    func show(near point: NSPoint) {
+    /// 在某个屏幕坐标附近弹出：放在这一点的下方，超出屏幕就往回挪。
+    /// takeFocus 为 false 时只显示不抢键盘，用户在别处打字不受影响
+    func show(near point: NSPoint, takeFocus: Bool = true) {
         contentViewController?.view.layoutSubtreeIfNeeded()
         let size = frame.size
         let screen = NSScreen.screens.first { $0.frame.contains(point) } ?? NSScreen.main
@@ -340,6 +345,10 @@ final class QuickPanel: NSPanel {
             origin.y = min(origin.y, visible.maxY - size.height - 8)
         }
         setFrameOrigin(origin)
-        makeKeyAndOrderFront(nil)
+        if takeFocus {
+            makeKeyAndOrderFront(nil)
+        } else {
+            orderFrontRegardless()
+        }
     }
 }

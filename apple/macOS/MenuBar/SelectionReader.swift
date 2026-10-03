@@ -3,6 +3,7 @@ import ApplicationServices
 import Carbon.HIToolbox
 
 /// 划词翻译：读取其它 App 里当前选中的文字。需要“辅助功能”权限。
+@MainActor
 enum SelectionReader {
     static var hasPermission: Bool { AXIsProcessTrusted() }
 
@@ -39,23 +40,41 @@ enum SelectionReader {
         let pasteboard = NSPasteboard.general
         let saved = snapshot(of: pasteboard)
         let before = pasteboard.changeCount
+        // 模拟复制期间剪贴板会变两次，别让“剪贴板自动翻译”把它当成用户复制
+        ClipboardWatcher.suspend()
 
         // 等用户松开快捷键里的 ⌥，否则发出去的会是 ⌥⌘C
         try? await Task.sleep(for: .milliseconds(150))
-        pressCommandC()
+        pressCommand(kVK_ANSI_C)
         for _ in 0..<12 where pasteboard.changeCount == before {
             try? await Task.sleep(for: .milliseconds(50))
         }
         guard pasteboard.changeCount != before else { return nil }
         let text = pasteboard.string(forType: .string)
         restore(saved, to: pasteboard)
+        ClipboardWatcher.markOwnWrite()
         return text
     }
 
-    private static func pressCommandC() {
+    /// 翻译并替换：把文字粘贴到当前选中的位置（替换掉选中的内容），再把剪贴板原来的内容放回去
+    static func paste(_ text: String) async {
+        let pasteboard = NSPasteboard.general
+        let saved = snapshot(of: pasteboard)
+        ClipboardWatcher.suspend()
+        pasteboard.clearContents()
+        pasteboard.setString(text, forType: .string)
+        ClipboardWatcher.markOwnWrite()
+        pressCommand(kVK_ANSI_V)
+        // 给目标 App 一点时间读剪贴板，太早还原会粘贴成旧内容
+        try? await Task.sleep(for: .milliseconds(400))
+        restore(saved, to: pasteboard)
+        ClipboardWatcher.markOwnWrite()
+    }
+
+    private static func pressCommand(_ key: Int) {
         let source = CGEventSource(stateID: .combinedSessionState)
         for keyDown in [true, false] {
-            let event = CGEvent(keyboardEventSource: source, virtualKey: CGKeyCode(kVK_ANSI_C), keyDown: keyDown)
+            let event = CGEvent(keyboardEventSource: source, virtualKey: CGKeyCode(key), keyDown: keyDown)
             event?.flags = .maskCommand
             event?.post(tap: .cghidEventTap)
         }

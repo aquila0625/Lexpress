@@ -26,7 +26,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         window.center()
         window.setFrameAutosaveName("QTranslatorMainWindow")
 
-        // 菜单栏图标和全局快捷键（⌥D 主窗口、⌥F 选中文字、⌥V 剪贴板、⌥S 截图、⌥A 输入）
+        // 菜单栏图标和全局快捷键（⌥D 主窗口、⌥F 选中文字、⌥R 翻译并替换、⌥V 剪贴板、⌥S 截图、⌥A 输入）
         statusBar = StatusBarController(controller: controller,
                                         toggleMainWindow: { [weak self] in self?.toggle() },
                                         showMainWindow: { [weak self] in self?.show() },

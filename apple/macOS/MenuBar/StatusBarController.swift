@@ -7,10 +7,12 @@ import UniformTypeIdentifiers
 enum MenuBarKey {
     /// 只在菜单栏显示，隐藏程序坞图标
     static let hideDockIcon = "menubar.hideDockIcon"
+    /// 剪贴板自动翻译
+    static let watchClipboard = "menubar.watchClipboard"
 }
 
 /// 菜单栏图标和它的菜单，以及全局快捷键：
-/// ⌥F 翻译选中文字、⌥V 翻译剪贴板、⌥S 截图翻译、⌥A 输入翻译、⌥D 打开主窗口。
+/// ⌥F 翻译选中文字、⌥R 翻译并替换、⌥V 翻译剪贴板、⌥S 截图翻译、⌥A 输入翻译、⌥D 打开主窗口。
 @MainActor
 final class StatusBarController: NSObject, NSMenuDelegate {
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -19,6 +21,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     private var hotKeys: [HotKey] = []
     private var failedHotKeys: [String] = []
     private var clickOutsideMonitor: Any?
+    private var clipboardWatcher: ClipboardWatcher!
 
     private let toggleMainWindow: () -> Void
     private let showMainWindow: () -> Void
@@ -28,6 +31,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     private var permissionItem: NSMenuItem!
     private var dockItem: NSMenuItem!
     private var loginItem: NSMenuItem!
+    private var clipboardItem: NSMenuItem!
 
     init(controller: ConversationController, toggleMainWindow: @escaping () -> Void, showMainWindow: @escaping () -> Void,
          newSession: @escaping () -> Void, openSettings: @escaping () -> Void) {
@@ -61,6 +65,9 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         }
         statusItem.menu = makeMenu()
         registerHotKeys()
+
+        clipboardWatcher = ClipboardWatcher { [weak self] pasteboard in self?.clipboardChanged(pasteboard) }
+        if UserDefaults.standard.bool(forKey: MenuBarKey.watchClipboard) { clipboardWatcher.start() }
     }
 
     // MARK: 四种快捷翻译
@@ -100,6 +107,41 @@ final class StatusBarController: NSObject, NSMenuDelegate {
             model.translate(image: image, origin: onlyRecognize ? .recognize : .screenshot)
             panel.show(near: anchor)
         }
+    }
+
+    /// 选中一段文字，翻译后直接替换成译文：中文换成英文，英文换成中文
+    func translateAndReplace() {
+        Task {
+            guard SelectionReader.hasPermission else {
+                SelectionReader.requestPermission()
+                return
+            }
+            guard let text = await SelectionReader.selectedText(), !text.isEmpty else {
+                showPanel(origin: .selection, text: nil,
+                          message: "没有读到选中的文字。先在输入框里选中要替换的文字，再按 ⌥R。")
+                return
+            }
+            guard let translated = await model.controller.quickTranslate(text)?.trimmed, !translated.isEmpty else {
+                showPanel(origin: .selection, text: nil, message: "翻译失败，原文没有改动。请检查网络后重试。")
+                return
+            }
+            await SelectionReader.paste(translated)
+            log.info("replace: \(text.count, privacy: .public) -> \(translated.count, privacy: .public) chars")
+        }
+    }
+
+    /// 剪贴板自动翻译：复制了文字或图片就在鼠标旁边显示译文，不抢键盘焦点
+    private func clipboardChanged(_ pasteboard: NSPasteboard) {
+        // 在访达里复制文件时剪贴板里是文件名，不翻译
+        let fileURLs = pasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL] ?? []
+        if let text = pasteboard.string(forType: .string)?.trimmed, !text.isEmpty, fileURLs.isEmpty {
+            model.translate(text: text, origin: .clipboard)
+        } else if let image = Self.image(from: pasteboard) {
+            model.translate(image: image, origin: .clipboard)
+        } else {
+            return
+        }
+        panel.show(near: anchor, takeFocus: false)
     }
 
     func translateInput() {
@@ -146,6 +188,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         let keys: [(String, Int, () -> Void)] = [
             ("⌥D", kVK_ANSI_D, { [weak self] in self?.toggleMainWindow() }),
             ("⌥F", kVK_ANSI_F, { [weak self] in self?.translateSelection() }),
+            ("⌥R", kVK_ANSI_R, { [weak self] in self?.translateAndReplace() }),
             ("⌥V", kVK_ANSI_V, { [weak self] in self?.translateClipboard() }),
             ("⌥S", kVK_ANSI_S, { [weak self] in self?.translateScreenshot() }),
             ("⌥A", kVK_ANSI_A, { [weak self] in self?.translateInput() }),
@@ -165,6 +208,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         let menu = NSMenu()
         menu.delegate = self
         menu.addItem(item("翻译选中文字", key: "f", symbol: "text.cursor", action: #selector(menuSelection)))
+        menu.addItem(item("翻译并替换选中文字", key: "r", symbol: "arrow.left.arrow.right", action: #selector(menuReplace)))
         menu.addItem(item("翻译剪贴板", key: "v", symbol: "doc.on.clipboard", action: #selector(menuClipboard)))
         menu.addItem(item("截图翻译", key: "s", symbol: "camera.viewfinder", action: #selector(menuScreenshot)))
         menu.addItem(item("截图识字（只复制文字）", key: "", symbol: "text.viewfinder", action: #selector(menuRecognize)))
@@ -175,6 +219,9 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         menu.addItem(.separator())
         permissionItem = item("开启划词翻译（需要辅助功能权限）…", key: "", symbol: "hand.raised", action: #selector(menuPermission))
         menu.addItem(permissionItem)
+        clipboardItem = item("剪贴板自动翻译", key: "", symbol: nil, action: #selector(menuToggleClipboard))
+        clipboardItem.toolTip = "每复制一段文字或一张图片，就在鼠标旁边显示译文"
+        menu.addItem(clipboardItem)
         dockItem = item("只在菜单栏显示", key: "", symbol: nil, action: #selector(menuToggleDock))
         menu.addItem(dockItem)
         loginItem = item("登录时自动启动", key: "", symbol: nil, action: #selector(menuToggleLogin))
@@ -197,11 +244,22 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     func menuNeedsUpdate(_ menu: NSMenu) {
         permissionItem.isHidden = SelectionReader.hasPermission
         dockItem.state = UserDefaults.standard.bool(forKey: MenuBarKey.hideDockIcon) ? .on : .off
+        clipboardItem.state = clipboardWatcher.isRunning ? .on : .off
         loginItem.state = SMAppService.mainApp.status == .enabled ? .on : .off
     }
 
     @objc private func menuSelection() { translateSelection() }
     @objc private func menuClipboard() { translateClipboard() }
+    @objc private func menuReplace() { translateAndReplace() }
+
+    @objc private func menuToggleClipboard() {
+        if clipboardWatcher.isRunning {
+            clipboardWatcher.stop()
+        } else {
+            clipboardWatcher.start()
+        }
+        UserDefaults.standard.set(clipboardWatcher.isRunning, forKey: MenuBarKey.watchClipboard)
+    }
     @objc private func menuScreenshot() { translateScreenshot() }
     @objc private func menuRecognize() { translateScreenshot(onlyRecognize: true) }
     @objc private func menuInput() { translateInput() }
