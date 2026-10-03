@@ -81,16 +81,20 @@ struct TurnView: View {
     // MARK: 原文
 
     private var textSource: some View {
-        FoldableText(text: turn.source, font: .system(size: 14), expanded: expanded, alignment: .trailing,
-                     foldedLines: 2, onToggle: onToggleExpand)
-            .foregroundStyle(.secondary)
-            .padding(.horizontal, 11)
-            .padding(.vertical, 7)
-            .background(Color.lxSurface, in: UnevenRoundedRectangle(topLeadingRadius: 14, bottomLeadingRadius: 14,
-                                                                     bottomTrailingRadius: 4, topTrailingRadius: 14))
-            .contextMenu { sourceMenu }
-            .frame(maxWidth: .infinity, alignment: .trailing)
-            .padding(.leading, 56)
+        HStack(alignment: .bottom, spacing: 2) {
+            Spacer(minLength: 0)
+            // 原文旁边的快捷复制
+            CopyButton(text: turn.source, label: "复制原文")
+            FoldableText(text: turn.source, font: .system(size: 14), expanded: expanded, alignment: .trailing,
+                         foldedLines: 2, onToggle: onToggleExpand)
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 11)
+                .padding(.vertical, 7)
+                .background(Color.lxSurface, in: UnevenRoundedRectangle(topLeadingRadius: 14, bottomLeadingRadius: 14,
+                                                                         bottomTrailingRadius: 4, topTrailingRadius: 14))
+                .contextMenu { sourceMenu }
+        }
+        .padding(.leading, 20)
     }
 
     @ViewBuilder
@@ -190,43 +194,33 @@ struct TurnView: View {
     /// 译文直接覆盖在图上原文的位置；按住“原图”按钮看原图，松手回到译文。点图片进入大图
     private var imageResults: some View {
         let all = turn.images.map(\.translation).filter { !$0.isEmpty }.joined(separator: "\n")
-        return VStack(alignment: .leading, spacing: 10) {
-            ForEach(Array(turn.images.enumerated()), id: \.element.id) { index, item in
-                ZStack(alignment: .topTrailing) {
-                    if let image = controller.store.image(named: item.fileName) {
-                        TranslatedImageView(image: image, blocks: item.blocks ?? [], showTranslation: !showOriginal && item.done)
-                            .clipShape(.rect(cornerRadius: 12))
-                            .frame(maxHeight: 460)
-                            .frame(maxWidth: .infinity)
-                            .contentShape(.rect)
-                            .onTapGesture { onEditImage(item.id) }
-                            .overlay {
-                                if !item.done {
-                                    ProgressView("识别和翻译中…")
-                                        .padding(12)
-                                        .background(.regularMaterial, in: .rect(cornerRadius: 12))
-                                }
-                            }
-                            .accessibilityLabel("图 \(index + 1)，点按看大图")
+        let multiple = turn.images.count > 1
+        return VStack(alignment: .leading, spacing: 8) {
+            if multiple {
+                // 多张图并排，左右滑动；每张露出一点下一张，提示还能滑
+                ScrollView(.horizontal) {
+                    LazyHStack(alignment: .top, spacing: 10) {
+                        ForEach(Array(turn.images.enumerated()), id: \.element.id) { index, item in
+                            imagePage(item, index: index)
+                                .containerRelativeFrame(.horizontal) { width, _ in width * 0.84 }
+                        }
                     }
-                    if item.done, !(item.blocks ?? []).isEmpty {
-                        holdForOriginal
-                            .padding(8)
-                    }
+                    .scrollTargetLayout()
                 }
-                if item.done, (item.blocks ?? []).isEmpty {
-                    Text(item.blocks == nil ? item.translation : "这张图片里没有识别到文字")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                }
+                .scrollTargetBehavior(.viewAligned)
+                .scrollIndicators(.hidden)
+            } else if let item = turn.images.first {
+                imagePage(item, index: 0)
             }
             if showsActions, turn.state == .done, !all.isEmpty {
                 actionBar {
                     SpeakButton(speech: .text(all, isChinese: !(turn.images.first?.recognized.isMostlyChinese ?? false)))
                         .frame(width: 44, height: 44)
-                    iconButton(copied ? "checkmark" : "doc.on.doc", "复制全部译文") {
-                        Clipboard.copy(all)
-                        copied = true
+                    if multiple {
+                        iconButton(copied ? "checkmark" : "doc.on.doc", "复制全部译文") {
+                            Clipboard.copy(all)
+                            copied = true
+                        }
                     }
                 }
             }
@@ -234,6 +228,49 @@ struct TurnView: View {
         .padding(10)
         .background(Color.lxImageCard, in: .rect(cornerRadius: 18))
         .onTapGesture(perform: onSelect)
+    }
+
+    /// 一张图：译文盖在图上，右上角按住看原图，下面是页码和这张图译文的快捷复制
+    private func imagePage(_ item: TurnImage, index: Int) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            if let image = controller.store.image(named: item.fileName) {
+                TranslatedImageView(image: image, blocks: item.blocks ?? [], showTranslation: !showOriginal && item.done)
+                    .clipShape(.rect(cornerRadius: 12))
+                    .contentShape(.rect)
+                    .onTapGesture { onEditImage(item.id) }
+                    // “按住看原图”贴在图片本身的右上角
+                    .overlay(alignment: .topTrailing) {
+                        if item.done, !(item.blocks ?? []).isEmpty {
+                            holdForOriginal.padding(8)
+                        }
+                    }
+                    .overlay {
+                        if !item.done {
+                            ProgressView("识别和翻译中…")
+                                .padding(12)
+                                .background(.regularMaterial, in: .rect(cornerRadius: 12))
+                        }
+                    }
+                    .accessibilityLabel("图 \(index + 1)，点按看大图")
+                    .frame(maxWidth: .infinity, maxHeight: turn.images.count > 1 ? 380 : 460)
+            }
+            HStack(spacing: 4) {
+                if turn.images.count > 1 {
+                    Text("\(index + 1) / \(turn.images.count)").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                }
+                if item.done, (item.blocks ?? []).isEmpty {
+                    Text(item.blocks == nil ? item.translation : "这张图片里没有识别到文字")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
+                Spacer(minLength: 0)
+                if item.done, !item.translation.isEmpty, !(item.blocks ?? []).isEmpty {
+                    CopyButton(text: item.translation, label: "复制图 \(index + 1) 的译文", title: "复制译文")
+                }
+            }
+            .frame(minHeight: 32)
+        }
     }
 
     /// 按住显示原图，松手回到译文
@@ -265,10 +302,17 @@ struct TurnView: View {
                 // 开着 AI 优化时不先显示机器翻译，等优化好了直接显示结果
                 working("AI 优化中…")
             } else {
-                FoldableText(text: sentence.displayed, font: .system(size: 18, weight: .medium), lineSpacing: 4,
-                             expanded: expanded, badge: badge, onToggle: onToggleExpand)
-                    .contentShape(.rect)
-                    .onTapGesture(perform: onSelect)
+                HStack(alignment: .top, spacing: 0) {
+                    FoldableText(text: sentence.displayed, font: .system(size: 18, weight: .medium), lineSpacing: 4,
+                                 expanded: expanded, badge: badge, onToggle: onToggleExpand)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(.rect)
+                        .onTapGesture(perform: onSelect)
+                    // 译文的快捷复制
+                    CopyButton(text: sentence.displayed, label: "复制译文")
+                        .padding(.top, -10)
+                        .padding(.trailing, -10)
+                }
             }
             if let error = turn.aiError {
                 Label(error, systemImage: "exclamationmark.triangle").font(.footnote).foregroundStyle(Color.lxAI)
@@ -306,10 +350,6 @@ struct TurnView: View {
                 actionBar {
                     SpeakButton(speech: .text(sentence.displayed, isChinese: !sentence.sourceIsChinese))
                         .frame(width: 44, height: 44)
-                    iconButton(copied ? "checkmark" : "doc.on.doc", "复制译文") {
-                        Clipboard.copy(sentence.displayed)
-                        copied = true
-                    }
                     iconButton("arrow.up.arrow.down", "对调：把译文反向再翻译一次") { controller.swap(turn) }
                     iconButton("arrowshape.turn.up.left", "AI 写回复", tint: .lxAI) {
                         AISettings.shared.isConfigured ? onReply(sentence) : onNeedAI()
@@ -401,6 +441,8 @@ struct WordCard: View {
                     .font(entry.isChinese ? .system(size: 26, weight: .semibold) : .system(size: 28, weight: .medium, design: .serif))
                     .textSelection(.enabled)
                 Spacer()
+                // 复制单词和释义
+                CopyButton(text: copyText, label: "复制单词和释义")
                 let starred = history.isStarred(entry.word)
                 Button { history.toggleStar(entry.word) } label: {
                     Image(systemName: starred ? "star.fill" : "star")
@@ -440,6 +482,14 @@ struct WordCard: View {
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color.lxSurface, in: .rect(cornerRadius: 20))
+    }
+
+    /// 复制的内容：单词加前几条释义
+    private var copyText: String {
+        let meanings = entry.senses.isEmpty
+            ? entry.definitions.prefix(3).map(\.text)
+            : entry.senses.prefix(4).map { [$0.pos, $0.meaning].compactMap { $0 }.joined(separator: " ") }
+        return ([entry.word] + meanings).joined(separator: "\n")
     }
 
     @ViewBuilder
@@ -510,5 +560,41 @@ struct FoldableText: View {
     private func measured(_ view: some View, _ update: @escaping (CGFloat) -> Void) -> some View {
         view.fixedSize(horizontal: false, vertical: true)
             .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { update($0) }
+    }
+}
+
+/// 快捷复制：小图标，点一下复制，变成对勾一会儿
+struct CopyButton: View {
+    let text: String
+    let label: String
+    /// 有文字时显示成“图标 + 文字”
+    var title: String?
+
+    @State private var copied = false
+
+    var body: some View {
+        Button {
+            Clipboard.copy(text)
+            withAnimation(.snappy) { copied = true }
+            Task {
+                try? await Task.sleep(for: .seconds(1.5))
+                withAnimation(.snappy) { copied = false }
+            }
+        } label: {
+            Group {
+                if let title {
+                    Label(copied ? "已复制" : title, systemImage: copied ? "checkmark" : "doc.on.doc")
+                        .font(.caption.weight(.semibold))
+                } else {
+                    Image(systemName: copied ? "checkmark" : "doc.on.doc")
+                        .font(.system(size: 13, weight: .medium))
+                }
+            }
+            .foregroundStyle(copied ? Color.green : Color.secondary)
+            .frame(minWidth: 36, minHeight: 36)
+            .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(copied ? "已复制" : label)
     }
 }
