@@ -66,6 +66,15 @@ This builds `Q-Translator.app` and copies it to `/Applications`.
 
 If your keychain has an "Apple Development" certificate, `build.sh` signs the app with it (or with `QTRANSLATOR_SIGN_IDENTITY` if you set one). macOS ties the Accessibility and Screen Recording permissions used by the menu bar features to the app's signature, so with a stable certificate you only grant them once. Without a certificate the app is ad-hoc signed and you have to grant them again after every rebuild.
 
+### macOS installer (DMG)
+
+```bash
+cd apple
+./make_dmg.sh
+```
+
+This writes `dist/Q-Translator-<version>.dmg`. For a download that other people can open, you need a "Developer ID Application" certificate (Xcode › Settings › Accounts › Manage Certificates) and notarization credentials saved once with `xcrun notarytool store-credentials QTranslator --apple-id <Apple ID> --team-id <team ID>`. With both, the script signs with Developer ID, submits the DMG for notarization and staples the ticket. Without them the DMG is only suitable for your own testing; macOS will refuse to open it on other Macs.
+
 ### iPhone / iPad
 
 ```bash
