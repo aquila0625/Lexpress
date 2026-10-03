@@ -10,6 +10,10 @@ extension Color {
     static let lxBackground = Color(light: 0xFFFFFF, dark: 0x0B0E13)
     static let lxWash = Color(light: 0xE4F0FF, dark: 0x0F1B2E)
     static let lxSurface = Color(light: 0xF1F7FF, dark: 0x161B23)
+    /// 会话里句子译文卡片的底色（浅薄荷绿），和蓝色的单词卡片、橙色的 AI 分开
+    static let lxSentenceCard = Color(light: 0xEEF7F2, dark: 0x15221C)
+    /// 会话里图片译文卡片的底色（中性浅灰）
+    static let lxImageCard = Color(light: 0xF3F4F6, dark: 0x1A1D22)
 
     init(light: UInt32, dark: UInt32) {
         #if os(macOS)

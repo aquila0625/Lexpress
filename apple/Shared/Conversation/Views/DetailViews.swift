@@ -131,6 +131,8 @@ struct ImageEditView: View {
     let imageID: UUID
 
     @Environment(\.dismiss) private var dismiss
+    /// 按住显示原图，松手回到译文
+    @State private var showOriginal = false
 
     var body: some View {
         let turn = store.turn(controller.currentID, turnID)
@@ -139,23 +141,29 @@ struct ImageEditView: View {
         NavigationStack {
             VStack(spacing: 16) {
                 if let item, let image = store.image(named: item.fileName) {
-                    Image(platformImage: image)
-                        .resizable()
-                        .scaledToFit()
+                    TranslatedImageView(image: image, blocks: item.blocks ?? [], showTranslation: !showOriginal && item.done)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    if item.done {
-                        Text(item.recognized.isEmpty ? "没有识别到文字" : item.recognized)
-                            .font(.footnote)
-                            .foregroundStyle(.white.opacity(0.75))
-                            .lineLimit(4)
-                            .padding(.horizontal)
-                    } else {
+                    if !item.done {
                         ProgressView("重新识别中…").tint(.white).foregroundStyle(.white)
+                    } else if (item.blocks ?? []).isEmpty {
+                        Text("没有识别到文字").font(.footnote).foregroundStyle(.white.opacity(0.75))
                     }
                 } else {
                     Spacer()
                 }
                 HStack(spacing: 12) {
+                    // 按住看原图，松手回到译文
+                    Label(showOriginal ? "原图" : "按住看原图", systemImage: showOriginal ? "eye" : "eye.slash")
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 14)
+                        .frame(minHeight: 44)
+                        .background(.white.opacity(showOriginal ? 0.3 : 0.15), in: .capsule)
+                        .contentShape(.capsule)
+                        .gesture(
+                            DragGesture(minimumDistance: 0)
+                                .onChanged { _ in if !showOriginal { showOriginal = true } }
+                                .onEnded { _ in showOriginal = false }
+                        )
                     Button { controller.rotateImage(turnID, imageID) } label: {
                         Label("旋转", systemImage: "rotate.right").frame(minHeight: 44)
                     }

@@ -18,6 +18,15 @@ struct ComposerView: View {
     @State private var photoItems: [PhotosPickerItem] = []
 
     private var isLong: Bool { controller.draft.count > 200 }
+    private var hasImages: Bool { !controller.pendingImages.isEmpty }
+    /// 带着图片时，输入框里写的是给 AI 的要求；关着 AI 时不能输入
+    private var textLocked: Bool { hasImages && !session.aiEnabled }
+    private var canSend: Bool { hasImages || !controller.draft.trimmed.isEmpty }
+
+    private var placeholder: String {
+        guard hasImages else { return "输入单词、句子或一段话" }
+        return session.aiEnabled ? "告诉 AI 怎么翻译（可不填），例如：只翻译菜名" : "打开“AI 优化”后可以写要求"
+    }
 
     private var maxLines: Int {
         let ratio: CGFloat = isLong ? 0.5 : 0.3
@@ -26,6 +35,9 @@ struct ComposerView: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            if hasImages {
+                AttachmentTray(controller: controller)
+            }
             if isLong {
                 HStack {
                     Text("已输入 \(controller.draft.count) 个字符").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
@@ -37,10 +49,11 @@ struct ComposerView: View {
                 }
                 .padding(.leading, 12)
             }
-            TextField("输入单词、句子或一段话", text: $controller.draft, axis: .vertical)
+            TextField(placeholder, text: $controller.draft, axis: .vertical)
                 .font(.system(size: 17))
                 .lineLimit(1...maxLines)
                 .focused(focused)
+                .disabled(textLocked)
                 // 查单词时不要被自动改成首字母大写
                 .textInputAutocapitalization(.never)
                 .padding(.horizontal, 12)
@@ -90,11 +103,11 @@ struct ComposerView: View {
                         .font(.system(size: 16, weight: .bold))
                         .foregroundStyle(Color.lxOnAccent)
                         .frame(width: 38, height: 38)
-                        .background(controller.draft.trimmed.isEmpty ? Color.secondary.opacity(0.4) : Color.lxAccent, in: .circle)
+                        .background(canSend ? Color.lxAccent : Color.secondary.opacity(0.4), in: .circle)
                         .frame(width: 44, height: 44)
                 }
                 .buttonStyle(.plain)
-                .disabled(controller.draft.trimmed.isEmpty)
+                .disabled(!canSend)
                 .accessibilityLabel("翻译")
             }
             .padding(.horizontal, 4)
@@ -115,11 +128,11 @@ struct ComposerView: View {
                         images.append(image)
                     }
                 }
-                controller.sendImages(images)
+                controller.attachImages(images)
             }
         }
         .fullScreenCover(isPresented: $showCamera) {
-            CameraPicker { controller.sendImages([$0]) }.ignoresSafeArea()
+            CameraPicker { controller.attachImages([$0]) }.ignoresSafeArea()
         }
         .fileImporter(isPresented: $showFiles, allowedContentTypes: [.image], allowsMultipleSelection: true) { result in
             guard case .success(let urls) = result else { return }
@@ -128,7 +141,7 @@ struct ComposerView: View {
                 defer { if scoped { url.stopAccessingSecurityScopedResource() } }
                 return UIImage(contentsOfFile: url.path)
             }
-            controller.sendImages(images)
+            controller.attachImages(images)
         }
         .sheet(isPresented: $showFullEditor) {
             NavigationStack {
@@ -175,7 +188,7 @@ struct ComposerView: View {
     private func paste() {
         let board = UIPasteboard.general
         if board.hasImages, let images = board.images, !images.isEmpty {
-            controller.sendImages(images)
+            controller.attachImages(images)
         } else if let text = board.string {
             controller.draft += text
             focused.wrappedValue = true

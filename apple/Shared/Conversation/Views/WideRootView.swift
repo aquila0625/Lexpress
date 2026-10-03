@@ -69,7 +69,7 @@ struct WideRootView: View {
                             RoundedRectangle(cornerRadius: 18)
                                 .strokeBorder(Color.lxAccent, style: StrokeStyle(lineWidth: 2, dash: [8, 6]))
                                 .background(Color.lxAccentSoft.opacity(0.35), in: .rect(cornerRadius: 18))
-                                .overlay { Label("松手翻译图片", systemImage: "photo.on.rectangle").font(.headline).foregroundStyle(Color.lxAccent) }
+                                .overlay { Label("松手加入图片", systemImage: "photo.on.rectangle").font(.headline).foregroundStyle(Color.lxAccent) }
                                 .padding(12)
                                 .allowsHitTesting(false)
                         }
@@ -78,7 +78,7 @@ struct WideRootView: View {
                     .onDrop(of: [.image, .fileURL], isTargeted: $dropTargeted) { providers in
                         Task {
                             let images = await ImageDrop.load(providers)
-                            if !images.isEmpty { controller.sendImages(images) }
+                            if !images.isEmpty { controller.attachImages(images) }
                         }
                         return true
                     }

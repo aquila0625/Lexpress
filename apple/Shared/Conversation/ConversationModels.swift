@@ -17,6 +17,21 @@ struct SceneGroup: Codable, Identifiable, Hashable {
     var cover: SceneCover
 }
 
+/// 图片里的一段文字和它在图里的位置（0…1，左上角为原点），译文覆盖在原来的位置上
+struct ImageBlock: Codable, Equatable, Identifiable {
+    var id = UUID()
+    var text: String
+    var translation = ""
+    var x: Double
+    var y: Double
+    var width: Double
+    var height: Double
+    /// 原文有几行，用来估算覆盖译文的字号
+    var lines: Int
+    /// 原文周围的底色（RGB），译文用同样的底色盖住原文
+    var background: UInt32?
+}
+
 /// 一张图片：本机文件名、识别出的文字和它的译文
 struct TurnImage: Codable, Identifiable, Equatable {
     var id = UUID()
@@ -24,6 +39,8 @@ struct TurnImage: Codable, Identifiable, Equatable {
     var recognized = ""
     var translation = ""
     var done = false
+    /// 按段识别的文字和位置；旧版本保存的图片没有
+    var blocks: [ImageBlock]?
 }
 
 enum TurnState: String, Codable {
@@ -46,6 +63,8 @@ struct Turn: Codable, Identifiable {
     var errorMessage: String?
     var aiError: String?
     var isOptimizing = false
+    /// 发图片时附带的要求（开着 AI 时才有），例如“只翻译菜名”
+    var instruction: String?
 
     var isImage: Bool { !images.isEmpty }
 

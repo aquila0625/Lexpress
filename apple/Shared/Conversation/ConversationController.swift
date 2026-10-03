@@ -11,6 +11,13 @@ final class ConversationController: ObservableObject {
     @Published var direction: Direction = .auto
     /// 系统离线翻译模型可以下载但还没下载
     @Published var offlineDownloadable = false
+    /// 选好还没发出去的图片，显示在输入框上方，可以预览、排序、删除
+    @Published var pendingImages: [PendingImage] = []
+
+    struct PendingImage: Identifiable {
+        let id = UUID()
+        let image: PlatformImage
+    }
 
     init() {
         if let latest = store.sessions.max(by: { $0.updatedAt < $1.updatedAt }) {
@@ -85,7 +92,33 @@ final class ConversationController: ObservableObject {
 
     // MARK: 发送
 
+    /// 选好的图片先放在输入框上方，不直接发送
+    func attachImages(_ images: [PlatformImage]) {
+        pendingImages += images.map { PendingImage(image: $0) }
+    }
+
+    func removePending(_ id: UUID) {
+        pendingImages.removeAll { $0.id == id }
+    }
+
+    /// 拖动排序：把一张图放到另一张前面
+    func movePending(_ id: UUID, before target: UUID) {
+        guard id != target, let from = pendingImages.firstIndex(where: { $0.id == id }) else { return }
+        let item = pendingImages.remove(at: from)
+        let to = pendingImages.firstIndex(where: { $0.id == target }) ?? pendingImages.count
+        pendingImages.insert(item, at: to)
+    }
+
     func send() {
+        // 有待发的图片：发图片，输入框里的文字是给 AI 的要求（关着 AI 时不能输入）
+        if !pendingImages.isEmpty {
+            let instruction = current?.aiEnabled == true ? draft.trimmed : ""
+            let images = pendingImages.map(\.image)
+            pendingImages = []
+            draft = ""
+            sendImages(images, instruction: instruction.isEmpty ? nil : instruction)
+            return
+        }
         let text = draft.trimmed
         guard !text.isEmpty else { return }
         draft = ""
@@ -96,11 +129,12 @@ final class ConversationController: ObservableObject {
     }
 
     /// 一次发送多张图片，作为同一轮
-    func sendImages(_ images: [PlatformImage]) {
+    func sendImages(_ images: [PlatformImage], instruction: String? = nil) {
         let files = images.compactMap { ConversationStore.saveImage($0) }
         guard !files.isEmpty else { return }
-        let turn = Turn(source: "", images: files.map { TurnImage(fileName: $0) }, sourceIsChinese: direction == .chineseToEnglish,
+        var turn = Turn(source: "", images: files.map { TurnImage(fileName: $0) }, sourceIsChinese: direction == .chineseToEnglish,
                         manualDirection: direction != .auto)
+        turn.instruction = instruction
         let sessionID = currentID
         store.appendTurn(turn, to: sessionID)
         Task { await process(sessionID, turn.id) }
@@ -120,6 +154,7 @@ final class ConversationController: ObservableObject {
         store.updateTurn(sessionID, turnID) {
             $0.state = .working
             $0.errorMessage = nil
+            for i in $0.images.indices { $0.images[i].done = false }
         }
         Task { await process(sessionID, turnID) }
     }
@@ -170,6 +205,7 @@ final class ConversationController: ObservableObject {
             if let i = $0.images.firstIndex(where: { $0.id == imageID }) {
                 $0.images[i].recognized = ""
                 $0.images[i].translation = ""
+                $0.images[i].blocks = nil
                 $0.images[i].done = false
             }
             $0.state = .working
@@ -228,28 +264,52 @@ final class ConversationController: ObservableObject {
         }
     }
 
+    /// 逐张识别，按段翻译，译文记下位置，显示时覆盖在原文上。开着 AI 时整张图的几段一起交给 AI，可以带用户的要求
     private func processImages(_ sessionID: UUID, _ turn: Turn) async {
+        let useAI = store.session(sessionID)?.aiEnabled == true && AISettings.shared.isConfigured
         for item in turn.images where !item.done {
             guard let image = store.image(named: item.fileName) else { continue }
-            let recognized = (try? await ImageText.recognize(image))?.trimmed ?? ""
-            var translation = "（这张图片里没有识别到文字）"
-            if !recognized.isEmpty {
-                let chinese = turn.manualDirection ? turn.sourceIsChinese : recognized.isMostlyChinese
-                translation = (try? await translateSentence(recognized, chinese: chinese))?.0 ?? "（翻译失败，可以点重试）"
+            let found = (try? await ImageText.recognizeBlocks(image)) ?? []
+            let recognized = found.map(\.text).joined(separator: "\n")
+            let chinese = turn.manualDirection ? turn.sourceIsChinese : recognized.isMostlyChinese
+            var translations = Array(repeating: "", count: found.count)
+            var failed = false
+            if !found.isEmpty {
+                if useAI, let result = try? await AITasks.translateImageBlocks(found.map(\.text), instruction: turn.instruction,
+                                                                                 toChinese: !chinese, config: AIClient.currentConfig) {
+                    translations = result.texts
+                } else {
+                    for (index, block) in found.enumerated() {
+                        if let text = try? await translateSentence(block.text, chinese: chinese).0 {
+                            translations[index] = text
+                        } else {
+                            failed = true
+                        }
+                    }
+                }
+            }
+            let colors = ImageText.backgroundColors(image, rects: found.map(\.rect))
+            let blocks = zip(zip(found, translations), colors).map { pair, color in
+                let (block, translation) = pair
+                return ImageBlock(text: block.text, translation: translation, x: block.rect.minX, y: block.rect.minY,
+                                  width: block.rect.width, height: block.rect.height, lines: block.lines, background: color)
             }
             store.updateTurn(sessionID, turn.id) {
                 if let i = $0.images.firstIndex(where: { $0.id == item.id }) {
                     $0.images[i].recognized = recognized
-                    $0.images[i].translation = translation
+                    $0.images[i].blocks = blocks
+                    $0.images[i].translation = found.isEmpty ? "（这张图片里没有识别到文字）"
+                        : translations.filter { !$0.isEmpty }.joined(separator: "\n")
                     $0.images[i].done = true
                 }
+                if failed { $0.errorMessage = "有几段没翻译成功，可以点重试" }
             }
         }
         store.updateTurn(sessionID, turn.id) {
             $0.source = $0.images.map(\.recognized).joined(separator: "\n")
             $0.state = .done
         }
-        autoTitle(sessionID, from: "图片翻译")
+        autoTitle(sessionID, from: turn.instruction ?? "图片翻译")
     }
 
     /// 先用系统离线翻译，不行再用在线翻译

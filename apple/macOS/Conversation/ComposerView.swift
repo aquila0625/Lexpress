@@ -14,6 +14,15 @@ struct ComposerView: View {
     @State private var showFiles = false
 
     private var isLong: Bool { controller.draft.count > 200 }
+    private var hasImages: Bool { !controller.pendingImages.isEmpty }
+    /// 带着图片时，输入框里写的是给 AI 的要求；关着 AI 时不能输入
+    private var textLocked: Bool { hasImages && !session.aiEnabled }
+    private var canSend: Bool { hasImages || !controller.draft.trimmed.isEmpty }
+
+    private var placeholder: String {
+        guard hasImages else { return "输入单词、句子或一段话，回车翻译" }
+        return session.aiEnabled ? "告诉 AI 怎么翻译（可不填），回车发送" : "打开“AI 优化”后可以写要求，回车发送"
+    }
 
     private var maxLines: Int {
         let ratio: CGFloat = isLong ? 0.5 : 0.3
@@ -22,6 +31,9 @@ struct ComposerView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
+            if hasImages {
+                AttachmentTray(controller: controller)
+            }
             if isLong {
                 Text("已输入 \(controller.draft.count) 个字符 · ⌥↩ 换行")
                     .font(.caption.weight(.semibold))
@@ -29,11 +41,12 @@ struct ComposerView: View {
                     .padding(.leading, 12)
                     .padding(.top, 8)
             }
-            TextField("输入单词、句子或一段话，回车翻译", text: $controller.draft, axis: .vertical)
+            TextField(placeholder, text: $controller.draft, axis: .vertical)
                 .textFieldStyle(.plain)
                 .font(.system(size: 16))
                 .lineLimit(1...maxLines)
                 .focused(focused)
+                .disabled(textLocked)
                 .onSubmit { controller.send() }
                 .padding(.horizontal, 12)
                 .padding(.top, isLong ? 2 : 12)
@@ -82,10 +95,10 @@ struct ComposerView: View {
                         .font(.system(size: 14, weight: .bold))
                         .foregroundStyle(Color.lxOnAccent)
                         .frame(width: 32, height: 32)
-                        .background(controller.draft.trimmed.isEmpty ? Color.secondary.opacity(0.4) : Color.lxAccent, in: .circle)
+                        .background(canSend ? Color.lxAccent : Color.secondary.opacity(0.4), in: .circle)
                 }
                 .buttonStyle(.plain)
-                .disabled(controller.draft.trimmed.isEmpty)
+                .disabled(!canSend)
                 .keyboardShortcut(.return, modifiers: .command)
                 .accessibilityLabel("翻译")
             }
@@ -102,7 +115,7 @@ struct ComposerView: View {
                 defer { if scoped { url.stopAccessingSecurityScopedResource() } }
                 return NSImage(contentsOf: url)
             }
-            controller.sendImages(images)
+            controller.attachImages(images)
         }
         .onReceive(NotificationCenter.default.publisher(for: .focusInput)) { _ in focused.wrappedValue = true }
     }
@@ -130,7 +143,7 @@ struct ComposerView: View {
         let board = NSPasteboard.general
         if let images = board.readObjects(forClasses: [NSImage.self]) as? [NSImage], !images.isEmpty,
            (board.string(forType: .string)?.trimmed ?? "").isEmpty {
-            controller.sendImages(images)
+            controller.attachImages(images)
         } else if let text = board.string(forType: .string) {
             controller.draft += text
             focused.wrappedValue = true

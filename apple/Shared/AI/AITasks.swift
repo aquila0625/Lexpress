@@ -46,6 +46,40 @@ enum AITasks {
         return try await AIClient.complete(system: system, user: user, config: config)
     }
 
+    // MARK: 图片里的文字
+
+    /// 把图片里识别出的几段文字一起翻译，可以带用户的要求（例如“只翻译菜名”）。返回和输入一一对应的译文，跳过的段是空字符串
+    static func translateImageBlocks(_ blocks: [String], instruction: String?, toChinese: Bool,
+                                     config: AIClient.Config) async throws -> (texts: [String], usage: AIUsage?) {
+        let system = """
+        You translate text that was recognized (OCR) from a photo in a translation app. The text comes as numbered \
+        blocks; each block is one paragraph or label at its own place in the image, and the app draws your translation \
+        over the original text at that place.
+
+        Translate every block into \(toChinese ? "Simplified Chinese" : "English"). Keep translations about as short as \
+        the original so they fit in the same space. Fix obvious OCR mistakes. If the user gives an instruction, follow it; \
+        when the instruction says to leave some content out, use an empty string for those blocks.
+
+        Answer with only a JSON array of strings, one per block in the same order, and nothing else: the app parses it.
+        """
+        var user = blocks.enumerated().map { "<block index=\"\($0.offset + 1)\">\n\($0.element)\n</block>" }.joined(separator: "\n")
+        if let instruction, !instruction.trimmed.isEmpty {
+            user += "\n<instruction>\n\(instruction.trimmed)\n</instruction>"
+        }
+        let response = try await AIClient.complete(system: system, user: user, config: config)
+        var texts: [String] = []
+        if let start = response.text.firstIndex(of: "["), let end = response.text.lastIndex(of: "]"),
+           let data = String(response.text[start...end]).data(using: .utf8),
+           let decoded = try? JSONDecoder().decode([String].self, from: data) {
+            texts = decoded
+        } else {
+            throw AIError(message: "AI 返回的格式不对，可以重试。")
+        }
+        // 数量对不上时按位置补齐或截断
+        texts = Array((texts + Array(repeating: "", count: max(0, blocks.count - texts.count))).prefix(blocks.count))
+        return (texts, response.usage)
+    }
+
     // MARK: 写回复
 
     private static let separator = "===ZH==="

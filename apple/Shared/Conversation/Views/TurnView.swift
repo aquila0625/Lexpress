@@ -22,7 +22,7 @@ extension Turn {
 }
 
 /// 会话里的一轮。每种内容有固定的样子，看一眼就分得清：
-/// 单词是一张小词卡；句子的原文缩成灰色小气泡，译文是主角；图片是缩略图加译文。
+/// 单词是浅蓝色的词典卡片；句子的原文缩成灰色小气泡，译文在浅绿色卡片里；图片的译文直接覆盖在图上。
 /// 操作按钮只在最新一轮和被点选的那一轮出现。
 struct TurnView: View {
     let turn: Turn
@@ -43,6 +43,8 @@ struct TurnView: View {
     @State private var editText = ""
     @State private var copied = false
     @State private var showBefore = false
+    /// 按住“原图”按钮时显示原图，松手回到译文
+    @State private var showOriginal = false
     @AppStorage(SettingsKey.showAIUsage) private var showUsage = false
 
     private var editing: Bool { editingTurn == turn.id }
@@ -125,63 +127,26 @@ struct TurnView: View {
         .onAppear { if editText.isEmpty { editText = turn.source } }
     }
 
+    /// 图片这一轮的“原文”：只显示几张图和附带的要求，图片本身在下面的译文卡片里
     private var imageSource: some View {
         VStack(alignment: .trailing, spacing: 4) {
-            ScrollView(.horizontal) {
-                HStack(spacing: 8) {
-                    ForEach(Array(turn.images.enumerated()), id: \.element.id) { index, item in
-                        thumbnail(item, index: index)
-                    }
-                }
-                .padding(.top, 12)
-                .padding(.trailing, 12)
+            if let instruction = turn.instruction {
+                Label(instruction, systemImage: "sparkles")
+                    .font(.system(size: 14))
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 11)
+                    .padding(.vertical, 7)
+                    .background(Color.lxSurface, in: UnevenRoundedRectangle(topLeadingRadius: 14, bottomLeadingRadius: 14,
+                                                                             bottomTrailingRadius: 4, topTrailingRadius: 14))
             }
-            .scrollIndicators(.hidden)
-            .defaultScrollAnchor(.trailing)
-            Text("\(turn.images.count) 张图片" + (turn.state == .working ? " · 识别中" : ""))
+            Text("\(turn.images.count) 张图片" + (turn.state == .working ? " · 识别和翻译中" : ""))
                 .font(.caption2)
                 .foregroundStyle(.secondary)
         }
+        .frame(maxWidth: .infinity, alignment: .trailing)
         .padding(.leading, 56)
         .contextMenu {
             Button("删除这一轮", systemImage: "trash", role: .destructive) { controller.deleteTurn(turn.id) }
-        }
-    }
-
-    private func thumbnail(_ item: TurnImage, index: Int) -> some View {
-        Button { onEditImage(item.id) } label: {
-            Group {
-                if let image = controller.store.image(named: item.fileName) {
-                    Image(platformImage: image).resizable().scaledToFill()
-                } else {
-                    Color.gray.opacity(0.3)
-                }
-            }
-            .frame(width: 64, height: 82)
-            .clipShape(.rect(cornerRadius: 10))
-            .overlay(alignment: .bottomLeading) {
-                Text("图 \(index + 1)")
-                    .font(.caption2.weight(.bold))
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 5)
-                    .padding(.vertical, 1)
-                    .background(.black.opacity(0.55), in: .rect(cornerRadius: 5))
-                    .padding(4)
-            }
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("图 \(index + 1)，点按编辑")
-        .overlay(alignment: .topTrailing) {
-            Button { controller.deleteImage(turn.id, item.id) } label: {
-                Image(systemName: "xmark.circle.fill")
-                    .font(.system(size: 20))
-                    .symbolRenderingMode(.palette)
-                    .foregroundStyle(.white, Color.black.opacity(0.7))
-                    .frame(width: 44, height: 44)
-            }
-            .buttonStyle(.plain)
-            .offset(x: 16, y: -16)
-            .accessibilityLabel("删除图 \(index + 1) 和它的译文")
         }
     }
 
@@ -206,7 +171,7 @@ struct TurnView: View {
             if turn.isImage {
                 imageResults
             } else if let entry = turn.word {
-                CompactWordCard(entry: entry) { onOpenWord(entry) }
+                WordCard(entry: entry) { onOpenWord(entry) }
                     .contextMenu { sourceMenu }
             } else if let sentence = turn.sentence {
                 sentenceResult(sentence)
@@ -222,21 +187,40 @@ struct TurnView: View {
         .frame(minHeight: 28)
     }
 
-    /// 几张图的译文合在一起显示，长了折叠
+    /// 译文直接覆盖在图上原文的位置；按住“原图”按钮看原图，松手回到译文。点图片进入大图
     private var imageResults: some View {
-        let allDone = turn.images.allSatisfy(\.done)
-        let all = turn.images.count == 1 ? (turn.images.first?.translation ?? "")
-            : turn.images.enumerated().filter { $0.element.done }
-                .map { "图 \($0.offset + 1)：\($0.element.translation)" }.joined(separator: "\n")
-        return VStack(alignment: .leading, spacing: 6) {
-            if !all.isEmpty {
-                FoldableText(text: all, font: .system(size: 17, weight: .medium), lineSpacing: 3,
-                             expanded: expanded, onToggle: onToggleExpand)
-                    .contentShape(.rect)
-                    .onTapGesture(perform: onSelect)
+        let all = turn.images.map(\.translation).filter { !$0.isEmpty }.joined(separator: "\n")
+        return VStack(alignment: .leading, spacing: 10) {
+            ForEach(Array(turn.images.enumerated()), id: \.element.id) { index, item in
+                ZStack(alignment: .topTrailing) {
+                    if let image = controller.store.image(named: item.fileName) {
+                        TranslatedImageView(image: image, blocks: item.blocks ?? [], showTranslation: !showOriginal && item.done)
+                            .clipShape(.rect(cornerRadius: 12))
+                            .frame(maxHeight: 460)
+                            .frame(maxWidth: .infinity)
+                            .contentShape(.rect)
+                            .onTapGesture { onEditImage(item.id) }
+                            .overlay {
+                                if !item.done {
+                                    ProgressView("识别和翻译中…")
+                                        .padding(12)
+                                        .background(.regularMaterial, in: .rect(cornerRadius: 12))
+                                }
+                            }
+                            .accessibilityLabel("图 \(index + 1)，点按看大图")
+                    }
+                    if item.done, !(item.blocks ?? []).isEmpty {
+                        holdForOriginal
+                            .padding(8)
+                    }
+                }
+                if item.done, (item.blocks ?? []).isEmpty {
+                    Text(item.blocks == nil ? item.translation : "这张图片里没有识别到文字")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
             }
-            if !allDone { working("识别和翻译中…") }
-            if showsActions, turn.state == .done {
+            if showsActions, turn.state == .done, !all.isEmpty {
                 actionBar {
                     SpeakButton(speech: .text(all, isChinese: !(turn.images.first?.recognized.isMostlyChinese ?? false)))
                         .frame(width: 44, height: 44)
@@ -247,6 +231,27 @@ struct TurnView: View {
                 }
             }
         }
+        .padding(10)
+        .background(Color.lxImageCard, in: .rect(cornerRadius: 18))
+        .onTapGesture(perform: onSelect)
+    }
+
+    /// 按住显示原图，松手回到译文
+    private var holdForOriginal: some View {
+        Label(showOriginal ? "原图" : "按住看原图", systemImage: showOriginal ? "eye" : "eye.slash")
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(.white)
+            .padding(.horizontal, 10)
+            .frame(height: 30)
+            .background(.black.opacity(showOriginal ? 0.75 : 0.55), in: .capsule)
+            .contentShape(.capsule)
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { _ in if !showOriginal { withAnimation(.easeOut(duration: 0.12)) { showOriginal = true } } }
+                    .onEnded { _ in withAnimation(.easeOut(duration: 0.12)) { showOriginal = false } }
+            )
+            .accessibilityLabel("按住看原图")
+            .accessibilityAction { showOriginal.toggle() }
     }
 
     private func sentenceResult(_ sentence: SentenceResult) -> some View {
@@ -335,6 +340,11 @@ struct TurnView: View {
                     .foregroundStyle(.secondary)
             }
         }
+        // 译文包在浅绿色卡片里，和蓝色的单词卡片分开
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.lxSentenceCard, in: .rect(cornerRadius: 18))
     }
 
     private func actionBar<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
@@ -377,58 +387,72 @@ struct TurnView: View {
     }
 }
 
-/// 会话里的小词卡：蓝色书本图标、白底蓝边，单词加粗，下面一行第一个释义；点开看完整词条
-struct CompactWordCard: View {
+/// 会话里的词典卡片：词头、发音、前几条释义，点按看完整词条
+struct WordCard: View {
     let entry: WordEntry
     let onOpen: () -> Void
 
-    private var phonetic: String? {
-        if entry.isChinese { return entry.pinyin }
-        let preferred = entry.phonetics.first { $0.accent == Speaker.defaultAccent } ?? entry.phonetics.first
-        return preferred.map { "/\($0.ipa)/" }
-    }
-
-    private var meaning: String {
-        if let sense = entry.senses.first { return [sense.pos, sense.meaning].compactMap { $0 }.joined(separator: " ") }
-        return entry.definitions.first?.text ?? entry.webMeanings.first ?? ""
-    }
+    @ObservedObject private var history = HistoryStore.shared
 
     var body: some View {
-        HStack(spacing: 10) {
-            Image(systemName: "character.book.closed.fill")
-                .font(.system(size: 17, weight: .semibold))
-                .foregroundStyle(.white)
-                .frame(width: 36, height: 36)
-                .background(Color.lxAccent, in: .rect(cornerRadius: 10))
-            VStack(alignment: .leading, spacing: 1) {
-                HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    Text(entry.word)
-                        .font(entry.isChinese ? .system(size: 19, weight: .bold) : .system(size: 20, weight: .bold, design: .serif))
-                        .lineLimit(1)
-                    if let phonetic {
-                        Text(phonetic).font(.footnote).foregroundStyle(.secondary).lineLimit(1)
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .top) {
+                Text(entry.word)
+                    .font(entry.isChinese ? .system(size: 26, weight: .semibold) : .system(size: 28, weight: .medium, design: .serif))
+                    .textSelection(.enabled)
+                Spacer()
+                let starred = history.isStarred(entry.word)
+                Button { history.toggleStar(entry.word) } label: {
+                    Image(systemName: starred ? "star.fill" : "star")
+                        .foregroundStyle(starred ? .orange : .secondary)
+                        .frame(width: 44, height: 44)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(starred ? "从生词本移除" : "加入生词本")
+            }
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 8) { pronunciations }
+                VStack(alignment: .leading, spacing: 8) { pronunciations }
+            }
+            VStack(alignment: .leading, spacing: 6) {
+                if entry.senses.isEmpty {
+                    ForEach(entry.definitions.prefix(3)) { d in
+                        Text(d.text + (d.note.map { "  " + $0 } ?? "")).font(.callout).lineLimit(3)
+                    }
+                } else {
+                    ForEach(entry.senses.prefix(4)) { sense in
+                        HStack(alignment: .firstTextBaseline, spacing: 6) {
+                            if let pos = sense.pos {
+                                Text(pos).font(.system(.footnote, design: .serif).weight(.semibold).italic()).foregroundStyle(Color.lxAccent)
+                            }
+                            Text(sense.meaning).font(.callout)
+                        }
                     }
                 }
-                Text(meaning).font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
             }
-            Spacer(minLength: 0)
-            SpeakButton(speech: entry.isChinese ? .chinese(entry.word) : .english(entry.word))
-                .frame(width: 40, height: 44)
-            Image(systemName: "chevron.right")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.tertiary)
+            Button(action: onOpen) {
+                Label("完整词条：例句、搭配、辨析", systemImage: "book")
+                    .font(.footnote.weight(.semibold))
+                    .frame(minHeight: 44)
+            }
+            .buttonStyle(.borderless)
         }
-        .padding(.leading, 10)
-        .padding(.trailing, 12)
-        .padding(.vertical, 8)
-        .background(Color.lxBackground, in: .rect(cornerRadius: 16))
-        .overlay { RoundedRectangle(cornerRadius: 16).stroke(Color.lxAccent.opacity(0.3), lineWidth: 1.5) }
-        .shadow(color: Color.lxAccent.opacity(0.1), radius: 5, y: 3)
-        .contentShape(.rect)
-        .onTapGesture(perform: onOpen)
-        .accessibilityElement(children: .combine)
-        .accessibilityAddTraits(.isButton)
-        .accessibilityHint("打开完整词条")
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.lxSurface, in: .rect(cornerRadius: 20))
+    }
+
+    @ViewBuilder
+    private var pronunciations: some View {
+        if entry.isChinese {
+            PronunciationPill(label: "中", text: entry.pinyin ?? "朗读", speech: .chinese(entry.word))
+        } else if entry.phonetics.isEmpty {
+            PronunciationPill(label: "美", text: "朗读", speech: .english(entry.word, accent: 2))
+        } else {
+            ForEach(entry.phonetics) { p in
+                PronunciationPill(label: p.label, text: "/\(p.ipa)/", speech: .english(entry.word, accent: p.accent))
+            }
+        }
     }
 }
 

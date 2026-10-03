@@ -24,6 +24,8 @@ struct ConversationView: View {
     @State private var expandedTurns: Set<UUID> = []
     /// 往上翻看历史时，右下角出现回到底部的箭头
     @State private var awayFromBottom = false
+    /// 滚动位置：回到底部时直接滚到内容最下边，不依赖某一轮是否已经加载
+    @State private var position = ScrollPosition(edge: .bottom)
     /// 顶部筛选：nil 表示全部
     @State private var filter: TurnKind?
     /// 点选的那一轮显示操作按钮（最新一轮总是显示）
@@ -164,6 +166,7 @@ struct ConversationView: View {
                     .padding(.top, 8)
                     .padding(.bottom, 16)
                 }
+                .scrollPosition($position)
                 .scrollDismissesKeyboard(.interactively)
                 // 平时贴底（最新的在下面）；筛选时从顶部开始排
                 .defaultScrollAnchor(filter == nil ? .bottom : .top)
@@ -173,9 +176,9 @@ struct ConversationView: View {
                     withAnimation(.snappy) { awayFromBottom = away }
                 }
                 .overlay(alignment: .bottom) {
-                    if awayFromBottom, let last = session?.turns.last?.id {
+                    if awayFromBottom, session?.turns.isEmpty == false {
                         Button {
-                            withAnimation(.snappy) { proxy.scrollTo(last, anchor: .bottom) }
+                            withAnimation(.snappy) { position.scrollTo(edge: .bottom) }
                         } label: {
                             Image(systemName: "arrow.down")
                                 .font(.system(size: 16, weight: .bold))
@@ -206,7 +209,7 @@ struct ConversationView: View {
                         filter = nil
                         selectedTurn = nil
                     }
-                    withAnimation { proxy.scrollTo(last, anchor: .bottom) }
+                    withAnimation { position.scrollTo(edge: .bottom) }
                 }
                 .onChange(of: scrollTarget) {
                     guard let target = scrollTarget else { return }
@@ -227,9 +230,7 @@ struct ConversationView: View {
                     expandedTurns = []
                     filter = nil
                     selectedTurn = nil
-                    if let last = store.session(controller.currentID)?.turns.last?.id {
-                        proxy.scrollTo(last, anchor: .bottom)
-                    }
+                    position.scrollTo(edge: .bottom)
                 }
             }
         }
