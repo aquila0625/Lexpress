@@ -15,3 +15,4 @@ DerivedData/
 .env
 *.local
 dist/
+.idea/

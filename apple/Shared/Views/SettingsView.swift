@@ -67,7 +67,7 @@ struct SettingsView: View {
                 } header: {
                     Text("AI 增强（可选）")
                 } footer: {
-                    Text("Lexpress 不提供 AI 额度，也不经过任何中间服务器：你自己在服务商那里注册，把 API Key 填在这里，费用由服务商向你收取。Key 只保存在本机钥匙串。注意 ChatGPT 的会员订阅不包含 API 额度，API Key 要在 OpenAI 开发者平台单独申请。不填也能使用词典、翻译、朗读和图片翻译。AI 用于优化句子翻译和帮你写回复；上面的开关关闭时不会自动优化，只有你点“AI 优化”才会运行。每次优化后会显示消耗的 token 数。")
+                    Text("Q-Translator 不提供 AI 额度，也不经过任何中间服务器：你自己在服务商那里注册，把 API Key 填在这里，费用由服务商向你收取。Key 只保存在本机钥匙串。注意 ChatGPT 的会员订阅不包含 API 额度，API Key 要在 OpenAI 开发者平台单独申请。不填也能使用词典、翻译、朗读和图片翻译。AI 用于优化句子翻译和帮你写回复；上面的开关关闭时不会自动优化，只有你点“AI 优化”才会运行。每次优化后会显示消耗的 token 数。")
                 }
 
                 Section("朗读") {
@@ -90,7 +90,7 @@ struct SettingsView: View {
 
                 Section("关于") {
                     LabeledContent("版本", value: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "")
-                    Link("源代码（MIT 许可）", destination: URL(string: "https://github.com/aquila0625/Lexpress")!)
+                    Link("源代码（MIT 许可）", destination: URL(string: "https://github.com/aquila0625/Q-Translator")!)
                 }
             }
             .formStyle(.grouped)

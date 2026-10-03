@@ -13,7 +13,7 @@ enum Youdao {
         var comps = URLComponents(string: "https://dict.youdao.com/jsonapi")!
         comps.queryItems = [URLQueryItem(name: "q", value: query), URLQueryItem(name: "le", value: "en")]
         var request = URLRequest(url: comps.url!, timeoutInterval: 6)
-        request.setValue("Mozilla/5.0 (Macintosh) Lexpress/1.0", forHTTPHeaderField: "User-Agent")
+        request.setValue("Mozilla/5.0 (Macintosh) QTranslator/1.0", forHTTPHeaderField: "User-Agent")
         let (data, _) = try await URLSession.shared.data(for: request)
         guard let root = try JSONSerialization.jsonObject(with: data) as? J else {
             throw URLError(.cannotParseResponse)

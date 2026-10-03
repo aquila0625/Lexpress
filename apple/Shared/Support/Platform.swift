@@ -104,5 +104,5 @@ enum Clipboard {
 
 extension Notification.Name {
     /// 窗口被呼出时，让输入框获得焦点并全选
-    static let focusInput = Notification.Name("Lexpress.focusInput")
+    static let focusInput = Notification.Name("QTranslator.focusInput")
 }

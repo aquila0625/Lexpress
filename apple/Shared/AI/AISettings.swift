@@ -1,7 +1,7 @@
 import Foundation
 import Security
 
-/// AI 服务商。Lexpress 不内置任何 key，用户自己去服务商那里注册，把 key 填进来。
+/// AI 服务商。Q-Translator 不内置任何 key，用户自己去服务商那里注册，把 key 填进来。
 enum AIProvider: String, CaseIterable, Identifiable {
     case claude
     case openai
@@ -101,7 +101,7 @@ final class AISettings: ObservableObject {
 
 /// API Key 只存在本机钥匙串里
 enum Keychain {
-    private static let service = "com.yishulabs.lexpress.ai"
+    private static let service = "com.yishulabs.qtranslator.ai"
 
     static func get(account: String) -> String? {
         let query: [String: Any] = [

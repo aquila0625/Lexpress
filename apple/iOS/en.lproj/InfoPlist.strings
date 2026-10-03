@@ -1,0 +1,3 @@
+/* 主屏幕和程序坞里显示的名字 */
+"CFBundleDisplayName" = "Q-Translator";
+"CFBundleName" = "Q-Translator";

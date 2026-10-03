@@ -44,7 +44,7 @@ struct RootSheetContent: View {
 
 extension Notification.Name {
     /// 菜单里的“设置…”
-    static let openSettings = Notification.Name("Lexpress.openSettings")
+    static let openSettings = Notification.Name("QTranslator.openSettings")
 }
 
 /// 宽屏布局（Mac、iPad）：左边常驻场景和会话，中间是会话，右边是输入记录

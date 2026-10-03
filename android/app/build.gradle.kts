@@ -6,11 +6,11 @@ plugins {
 }
 
 android {
-    namespace = "com.yishulabs.lexpress"
+    namespace = "com.yishulabs.qtranslator"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.yishulabs.lexpress"
+        applicationId = "com.yishulabs.qtranslator"
         minSdk = 26
         targetSdk = 35
         versionCode = 2

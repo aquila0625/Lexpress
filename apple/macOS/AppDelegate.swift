@@ -16,7 +16,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1100, height: 720),
                           styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
                           backing: .buffered, defer: false)
-        window.title = "Lexpress 快译"
+        window.title = "Q-Translator 快译"
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
         window.isReleasedWhenClosed = false   // 关窗只是隐藏，再次呼出不用重建
@@ -24,7 +24,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         window.isMovableByWindowBackground = true
         window.contentView = NSHostingView(rootView: WideRootView(controller: controller))
         window.center()
-        window.setFrameAutosaveName("LexpressMainWindow.v4")
+        window.setFrameAutosaveName("QTranslatorMainWindow")
 
         // ⌥D 全局呼出 / 隐藏
         hotKey = HotKey(keyCode: kVK_ANSI_D, modifiers: optionKey) { [weak self] in
@@ -41,11 +41,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         // 系统“服务”：在任意 app 里选中文字 → 右键 → 用快译翻译（端口名要和 Info.plist 的 NSPortName 一致）
-        NSRegisterServicesProvider(self, "Lexpress")
+        NSRegisterServicesProvider(self, "QTranslator")
 
         show()
 
-        // 支持带参数启动直接查询：open -a Lexpress --args hello，或传一张图片的路径
+        // 支持带参数启动直接查询：open -a Q-Translator --args hello，或传一张图片的路径
         let query = CommandLine.arguments.dropFirst().filter { !$0.hasPrefix("-") }.joined(separator: " ")
         if let image = NSImage(contentsOfFile: query) {
             controller.sendImages([image])
@@ -134,10 +134,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let app = NSMenu()
         app.addItem(withTitle: "设置…", action: #selector(openSettings(_:)), keyEquivalent: ",").target = self
         app.addItem(.separator())
-        app.addItem(withTitle: "隐藏 Lexpress", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
+        app.addItem(withTitle: "隐藏 Q-Translator", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
         app.addItem(.separator())
-        app.addItem(withTitle: "退出 Lexpress", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
-        main.addItem(submenu(app, title: "Lexpress"))
+        app.addItem(withTitle: "退出 Q-Translator", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        main.addItem(submenu(app, title: "Q-Translator"))
 
         let file = NSMenu(title: "文件")
         file.addItem(withTitle: "新建会话", action: #selector(newSession(_:)), keyEquivalent: "n").target = self

@@ -17,7 +17,14 @@ final class ConversationStore: ObservableObject {
 
     static let directory: URL = {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        let url = base.appendingPathComponent("Lexpress", isDirectory: true)
+        let url = base.appendingPathComponent("QTranslator", isDirectory: true)
+        #if os(macOS)
+        // 改名前（Lexpress）存的会话搬到新目录，Mac 上不丢记录
+        let old = base.appendingPathComponent("Lexpress", isDirectory: true)
+        if !FileManager.default.fileExists(atPath: url.path), FileManager.default.fileExists(atPath: old.path) {
+            try? FileManager.default.moveItem(at: old, to: url)
+        }
+        #endif
         try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         return url
     }()

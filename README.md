@@ -1,8 +1,8 @@
-# Lexpress 快译
+# Q-Translator 快译
 
-Lexpress is a fast, simple English ⇄ Chinese dictionary and translator for iPhone, iPad, Mac and Android. Open it, type a word, a sentence or a paragraph, and get the result right away.
+Q-Translator is a fast, simple English ⇄ Chinese dictionary and translator for iPhone, iPad, Mac and Android. Open it, type a word, a sentence or a paragraph, and get the result right away.
 
-Lexpress（快译）是一个简单、直接、高效的中英词典和翻译工具：打开就能输入，单词、句子、整段话都能翻译。
+Q-Translator（快译）是一个简单、直接、高效的中英词典和翻译工具：打开就能输入，单词、句子、整段话都能翻译。
 
 ## Status
 
@@ -22,11 +22,11 @@ Lexpress（快译）是一个简单、直接、高效的中英词典和翻译工
 - **History and word list**: recent lookups, with a star to keep words
 - **AI (optional, bring your own key)**: check and correct a machine translation, and draft a reply to a message you just translated (text message or email; from your key points or by polishing your own draft)
 - **macOS extras**: global hotkey `⌥D`, "translate selection" in the right-click Services menu, `⌘V` to paste an image
-- **Android extras**: share text or images to Lexpress, or pick "快译" from the text-selection menu in any app
+- **Android extras**: share text or images to Q-Translator, or pick "快译" from the text-selection menu in any app
 
 ## Data sources
 
-Lexpress prefers free and offline sources and only goes online when it has to.
+Q-Translator prefers free and offline sources and only goes online when it has to.
 
 | Source | Used for | Notes |
 | --- | --- | --- |
@@ -36,11 +36,11 @@ Lexpress prefers free and offline sources and only goes online when it has to.
 | Youdao dictionary JSON endpoint | Word entries and word audio | Public but unofficial endpoint; it may change without notice |
 | MyMemory | Fallback sentence translation | Free tier, limited daily quota |
 
-Lexpress is not affiliated with any of these providers.
+Q-Translator is not affiliated with any of these providers.
 
 ## AI features: bring your own key
 
-AI features are optional. Lexpress ships with no API key and has no server of its own. You register with a provider yourself, paste your API key into Settings, and the app talks to the provider directly from your device. The key is stored in the system Keychain (on Android, encrypted with the Android Keystore) and usage is billed to you by the provider.
+AI features are optional. Q-Translator ships with no API key and has no server of its own. You register with a provider yourself, paste your API key into Settings, and the app talks to the provider directly from your device. The key is stored in the system Keychain (on Android, encrypted with the Android Keystore) and usage is billed to you by the provider.
 
 Supported providers:
 
@@ -62,17 +62,17 @@ cd apple
 ./build.sh install
 ```
 
-This builds `Lexpress.app` and copies it to `/Applications`.
+This builds `Q-Translator.app` and copies it to `/Applications`.
 
 ### iPhone / iPad
 
 ```bash
 cd apple
-LEXPRESS_TEAM_ID=YOUR_TEAM_ID xcodegen generate
-open Lexpress.xcodeproj
+QTRANSLATOR_TEAM_ID=YOUR_TEAM_ID xcodegen generate
+open QTranslator.xcodeproj
 ```
 
-Pick the `Lexpress-iOS` scheme and run it on a simulator or a device. `LEXPRESS_TEAM_ID` is your Apple developer team ID and is only needed for real devices; you can also leave it out and choose the team in Xcode.
+Pick the `QTranslator-iOS` scheme and run it on a simulator or a device. `QTRANSLATOR_TEAM_ID` is your Apple developer team ID and is only needed for real devices; you can also leave it out and choose the team in Xcode.
 
 Apple's on-device translation does not run in the iOS Simulator, so sentences fall back to the online translator there.
 
@@ -91,7 +91,7 @@ The APKs are written to `android/app/build/outputs/apk/release/`, one per CPU ty
 
 ```
 apple/
-  project.yml        XcodeGen spec (two targets: Lexpress-iOS, Lexpress-macOS)
+  project.yml        XcodeGen spec (two targets: QTranslator-iOS, QTranslator-macOS)
   Shared/            Code shared by all Apple platforms
     Core/            Dictionary, translation, OCR, speech, history
     AI/              Provider settings, API client, prompts
@@ -101,7 +101,7 @@ apple/
   macOS/             macOS app entry point, global hotkey, Services
   Scripts/           Icon generator
 android/
-  app/src/main/java/com/yishulabs/lexpress/
+  app/src/main/java/com/yishulabs/qtranslator/
     core/            Dictionary, translation, OCR, speech, settings
     ai/              Provider settings, API client, prompts, usage
     conversation/    Conversations, scenes, storage

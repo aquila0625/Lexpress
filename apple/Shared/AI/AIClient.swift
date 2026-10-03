@@ -20,7 +20,7 @@ struct AIResponse {
     let usage: AIUsage?
 }
 
-/// 用用户自己的 key 直接请求 AI 服务商，中间不经过任何 Lexpress 的服务器。
+/// 用用户自己的 key 直接请求 AI 服务商，中间不经过任何 Q-Translator 的服务器。
 enum AIClient {
     struct Config {
         let provider: AIProvider

@@ -12,5 +12,5 @@ dependencyResolutionManagement {
         mavenCentral()
     }
 }
-rootProject.name = "Lexpress"
+rootProject.name = "QTranslator"
 include(":app")

@@ -3,7 +3,7 @@ import SwiftUI
 import Translation
 
 /// 只记录字符数，不记录用户输入的内容
-let log = Logger(subsystem: "com.yishulabs.lexpress", category: "app")
+let log = Logger(subsystem: "com.yishulabs.qtranslator", category: "app")
 
 /// 翻译方向：默认按输入内容自动识别，点方向按钮后变成手动指定
 enum Direction {

@@ -1,7 +1,7 @@
 import AppKit
 import Translation
 
-// 命令行自检：Lexpress --lookup <词或句子>，不启动界面，方便验证接口是否还可用
+// 命令行自检：Q-Translator --lookup <词或句子>，不启动界面，方便验证接口是否还可用
 if CommandLine.arguments.count > 2, CommandLine.arguments[1] == "--lookup" {
     let query = CommandLine.arguments.dropFirst(2).joined(separator: " ")
     Task {
@@ -32,7 +32,7 @@ if CommandLine.arguments.count > 2, CommandLine.arguments[1] == "--lookup" {
     dispatchMain()
 }
 
-// 命令行自检：Lexpress --ocr <图片路径>，打印识别出的文字
+// 命令行自检：Q-Translator --ocr <图片路径>，打印识别出的文字
 if CommandLine.arguments.count > 2, CommandLine.arguments[1] == "--ocr" {
     Task {
         guard let image = NSImage(contentsOfFile: CommandLine.arguments[2]) else {

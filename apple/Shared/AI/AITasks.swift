@@ -1,6 +1,6 @@
 import Foundation
 
-/// Lexpress 里用到 AI 的几件事：校准机器翻译、帮用户写回复。
+/// Q-Translator 里用到 AI 的几件事：校准机器翻译、帮用户写回复。
 enum AITasks {
     enum ReplyKind: String, CaseIterable, Identifiable {
         case message, email
