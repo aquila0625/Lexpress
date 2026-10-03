@@ -131,7 +131,7 @@ struct ImageEditView: View {
     let imageID: UUID
 
     @Environment(\.dismiss) private var dismiss
-    /// 按住显示原图，松手回到译文
+    /// 点“看原图 / 看译文”切换
     @State private var showOriginal = false
 
     var body: some View {
@@ -152,18 +152,14 @@ struct ImageEditView: View {
                     Spacer()
                 }
                 HStack(spacing: 12) {
-                    // 按住看原图，松手回到译文
-                    Label(showOriginal ? "原图" : "按住看原图", systemImage: showOriginal ? "eye" : "eye.slash")
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 14)
-                        .frame(minHeight: 44)
-                        .background(.white.opacity(showOriginal ? 0.3 : 0.15), in: .capsule)
-                        .contentShape(.capsule)
-                        .gesture(
-                            DragGesture(minimumDistance: 0)
-                                .onChanged { _ in if !showOriginal { showOriginal = true } }
-                                .onEnded { _ in showOriginal = false }
-                        )
+                    // 点一下切换原图和译文
+                    Button {
+                        withAnimation(.easeOut(duration: 0.15)) { showOriginal.toggle() }
+                    } label: {
+                        Label(showOriginal ? "看译文" : "看原图", systemImage: showOriginal ? "character.book.closed" : "photo")
+                            .frame(minHeight: 44)
+                    }
+                    .buttonStyle(.glass)
                     Button { controller.rotateImage(turnID, imageID) } label: {
                         Label("旋转", systemImage: "rotate.right").frame(minHeight: 44)
                     }

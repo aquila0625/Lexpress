@@ -64,8 +64,8 @@ struct TurnView: View {
     @State private var editText = ""
     @State private var copied = false
     @State private var showBefore = false
-    /// 按住“原图”按钮时显示原图，松手回到译文
-    @State private var showOriginal = false
+    /// 切到“原图”的那几张图片（默认都显示译文）
+    @State private var originals: Set<UUID> = []
     @AppStorage(SettingsKey.showAIUsage) private var showUsage = false
 
     private var editing: Bool { editingTurn == turn.id }
@@ -143,7 +143,10 @@ struct TurnView: View {
         Button("朗读原文", systemImage: "speaker.wave.2") {
             Speaker.shared.toggle(.text(turn.source, isChinese: turn.sourceIsChinese))
         }
+        #if os(macOS)
+        // iPhone 上往左滑删除；Mac 没有左滑，保留右键删除
         Button("删除这一轮", systemImage: "trash", role: .destructive) { onDelete() }
+        #endif
     }
 
     private var editor: some View {
@@ -185,9 +188,6 @@ struct TurnView: View {
         }
         .frame(maxWidth: .infinity, alignment: .trailing)
         .padding(.leading, 56)
-        .contextMenu {
-            Button("删除这一轮", systemImage: "trash", role: .destructive) { onDelete() }
-        }
     }
 
     // MARK: 结果
@@ -227,18 +227,17 @@ struct TurnView: View {
         .frame(minHeight: 28)
     }
 
-    /// 译文直接覆盖在图上原文的位置；按住“原图”按钮看原图，松手回到译文。点图片进入大图
+    /// 译文直接覆盖在图上原文的位置；右上角点“原图 / 译文”切换。点图片进入大图
     private var imageResults: some View {
         let all = turn.images.map(\.translation).filter { !$0.isEmpty }.joined(separator: "\n")
         let multiple = turn.images.count > 1
-        return VStack(alignment: .leading, spacing: 8) {
+        return VStack(alignment: .leading, spacing: 6) {
             if multiple {
-                // 多张图并排，左右滑动；每张露出一点下一张，提示还能滑
+                // 多张图并排、按各自的宽高比排得紧凑一些，左右滑动
                 ScrollView(.horizontal) {
-                    LazyHStack(alignment: .top, spacing: 10) {
+                    HStack(alignment: .top, spacing: 8) {
                         ForEach(Array(turn.images.enumerated()), id: \.element.id) { index, item in
-                            imagePage(item, index: index)
-                                .containerRelativeFrame(.horizontal) { width, _ in width * 0.84 }
+                            imagePage(item, index: index, height: 260)
                         }
                     }
                     .scrollTargetLayout()
@@ -246,7 +245,7 @@ struct TurnView: View {
                 .scrollTargetBehavior(.viewAligned)
                 .scrollIndicators(.hidden)
             } else if let item = turn.images.first {
-                imagePage(item, index: 0)
+                imagePage(item, index: 0, height: nil)
             }
             if showsActions, turn.state == .done, !all.isEmpty {
                 actionBar {
@@ -261,27 +260,32 @@ struct TurnView: View {
                 }
             }
         }
-        .padding(10)
+        .padding(8)
         .background(Color.lxImageCard, in: .rect(cornerRadius: 18))
         .onTapGesture(perform: onSelect)
+        #if os(macOS)
         .contextMenu {
             Button("删除这一轮", systemImage: "trash", role: .destructive) { onDelete() }
         }
+        #endif
     }
 
-    /// 一张图：译文盖在图上，右上角按住看原图，下面是页码和这张图译文的快捷复制
-    private func imagePage(_ item: TurnImage, index: Int) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            if let image = controller.store.image(named: item.fileName) {
-                TranslatedImageView(image: image, blocks: item.blocks ?? [], showTranslation: !showOriginal && item.done)
+    /// 一张图：译文盖在图上，右上角切换原图和译文，下面是页码和这张图译文的快捷复制。
+    /// height 为 nil 时铺满宽度（只有一张图）；多张图时按固定高度、各自的宽高比排
+    private func imagePage(_ item: TurnImage, index: Int, height: CGFloat?) -> some View {
+        let image = controller.store.image(named: item.fileName)
+        let ratio = image.map { $0.size.width / max($0.size.height, 1) } ?? 0.75
+        let width: CGFloat? = height.map { min(max($0 * ratio, 120), 300) }
+        let hasBlocks = item.done && !(item.blocks ?? []).isEmpty
+        return VStack(alignment: .leading, spacing: 2) {
+            if let image {
+                TranslatedImageView(image: image, blocks: item.blocks ?? [],
+                                    showTranslation: !originals.contains(item.id) && item.done)
                     .clipShape(.rect(cornerRadius: 12))
                     .contentShape(.rect)
                     .onTapGesture { onEditImage(item.id) }
-                    // “按住看原图”贴在图片本身的右上角
                     .overlay(alignment: .topTrailing) {
-                        if item.done, !(item.blocks ?? []).isEmpty {
-                            holdForOriginal.padding(8)
-                        }
+                        if hasBlocks { originalToggle(item.id).padding(6) }
                     }
                     .overlay {
                         if !item.done {
@@ -291,43 +295,53 @@ struct TurnView: View {
                         }
                     }
                     .accessibilityLabel("图 \(index + 1)，点按看大图")
-                    .frame(maxWidth: .infinity, maxHeight: turn.images.count > 1 ? 380 : 460)
+                    .frame(width: width, height: height, alignment: .top)
+                    .frame(maxWidth: height == nil ? .infinity : nil, maxHeight: height == nil ? 460 : nil)
             }
             HStack(spacing: 4) {
                 if turn.images.count > 1 {
-                    Text("\(index + 1) / \(turn.images.count)").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                    Text("\(index + 1)/\(turn.images.count)").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
                 }
                 if item.done, (item.blocks ?? []).isEmpty {
-                    Text(item.blocks == nil ? item.translation : "这张图片里没有识别到文字")
+                    Text(item.blocks == nil ? item.translation : "没有识别到文字")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
-                        .lineLimit(2)
+                        .lineLimit(1)
                 }
                 Spacer(minLength: 0)
-                if item.done, !item.translation.isEmpty, !(item.blocks ?? []).isEmpty {
-                    CopyButton(text: item.translation, label: "复制图 \(index + 1) 的译文", title: "复制译文")
+                if hasBlocks, !item.translation.isEmpty {
+                    CopyButton(text: item.translation, label: "复制图 \(index + 1) 的译文",
+                               title: (width ?? 999) >= 170 ? "复制译文" : nil)
                 }
             }
-            .frame(minHeight: 32)
+            .frame(width: width)
+            .frame(minHeight: 30)
         }
     }
 
-    /// 按住显示原图，松手回到译文
-    private var holdForOriginal: some View {
-        Label(showOriginal ? "原图" : "按住看原图", systemImage: showOriginal ? "eye" : "eye.slash")
-            .font(.caption.weight(.semibold))
-            .foregroundStyle(.white)
-            .padding(.horizontal, 10)
-            .frame(height: 30)
-            .background(.black.opacity(showOriginal ? 0.75 : 0.55), in: .capsule)
-            .contentShape(.capsule)
-            .gesture(
-                DragGesture(minimumDistance: 0)
-                    .onChanged { _ in if !showOriginal { withAnimation(.easeOut(duration: 0.12)) { showOriginal = true } } }
-                    .onEnded { _ in withAnimation(.easeOut(duration: 0.12)) { showOriginal = false } }
-            )
-            .accessibilityLabel("按住看原图")
-            .accessibilityAction { showOriginal.toggle() }
+    /// 图片右上角的切换：原图 / 译文，点哪个显示哪个
+    private func originalToggle(_ id: UUID) -> some View {
+        let showingOriginal = originals.contains(id)
+        return HStack(spacing: 0) {
+            ForEach([false, true], id: \.self) { original in
+                let on = showingOriginal == original
+                Text(original ? "原图" : "译文")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(on ? Color.black : Color.white)
+                    .padding(.horizontal, 10)
+                    .frame(height: 26)
+                    .background(on ? Color.white : Color.clear, in: .capsule)
+                    .contentShape(.capsule)
+                    .onTapGesture {
+                        withAnimation(.easeOut(duration: 0.15)) {
+                            if original { originals.insert(id) } else { originals.remove(id) }
+                        }
+                    }
+                    .accessibilityAddTraits(on ? [.isButton, .isSelected] : .isButton)
+            }
+        }
+        .padding(2)
+        .background(.black.opacity(0.55), in: .capsule)
     }
 
     private func sentenceResult(_ sentence: SentenceResult) -> some View {
