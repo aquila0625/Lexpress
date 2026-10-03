@@ -24,6 +24,10 @@ struct ConversationView: View {
     @State private var expandedTurns: Set<UUID> = []
     /// 往上翻看历史时，右下角出现回到底部的箭头
     @State private var awayFromBottom = false
+    /// 顶部筛选：nil 表示全部
+    @State private var filter: TurnKind?
+    /// 点选的那一轮显示操作按钮（最新一轮总是显示）
+    @State private var selectedTurn: UUID?
     @State private var renaming = false
     @State private var renameText = ""
     @State private var confirmDelete = false
@@ -52,13 +56,82 @@ struct ConversationView: View {
         }
     }
 
+    /// 要显示的轮次，以及每一轮上面要不要加时间分隔（和上一轮隔了 10 分钟以上）
+    private func rows(_ session: ChatSession?) -> [(turn: Turn, time: String?)] {
+        let turns = (session?.turns ?? []).filter { filter == nil || $0.kind == filter }
+        var previous: Date?
+        return turns.map { turn in
+            defer { previous = turn.createdAt }
+            guard previous.map({ turn.createdAt.timeIntervalSince($0) > 600 }) ?? true else { return (turn, nil) }
+            let time = turn.createdAt.formatted(date: .omitted, time: .shortened)
+            let calendar = Calendar.current
+            // 和上一轮在同一天时只写时间，换了一天就带上日期
+            let sameDay = previous.map { calendar.isDate($0, inSameDayAs: turn.createdAt) } ?? false
+            if sameDay { return (turn, time) }
+            if calendar.isDateInToday(turn.createdAt) { return (turn, "今天 " + time) }
+            if calendar.isDateInYesterday(turn.createdAt) { return (turn, "昨天 " + time) }
+            return (turn, turn.createdAt.formatted(.dateTime.month().day()) + " " + time)
+        }
+    }
+
+    /// 筛选栏：会话里有两种以上的内容时才出现
+    @ViewBuilder
+    private func filterBar(_ session: ChatSession?) -> some View {
+        let turns = session?.turns ?? []
+        let counts = TurnKind.allCases.map { kind in (kind, turns.filter { $0.kind == kind }.count) }.filter { $0.1 > 0 }
+        if counts.count >= 2 {
+            ScrollView(.horizontal) {
+                HStack(spacing: 8) {
+                    filterChip("全部 \(turns.count)", on: filter == nil) { filter = nil }
+                    ForEach(counts, id: \.0) { kind, count in
+                        filterChip("\(kind.title) \(count)", on: filter == kind) { filter = filter == kind ? nil : kind }
+                    }
+                }
+                .padding(.horizontal, 16)
+            }
+            .scrollIndicators(.hidden)
+            .padding(.bottom, 6)
+        }
+    }
+
+    private func filterChip(_ title: String, on: Bool, action: @escaping () -> Void) -> some View {
+        Button {
+            withAnimation(.snappy) {
+                selectedTurn = nil
+                action()
+            }
+        } label: {
+            Text(title)
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(on ? Color.lxBackground : Color.secondary)
+                .padding(.horizontal, 12)
+                .frame(height: 30)
+                .background(on ? Color.primary : Color.secondary.opacity(0.12), in: .capsule)
+                .frame(minHeight: 40)
+                .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(on ? .isSelected : [])
+    }
+
     private func main(_ session: ChatSession?) -> some View {
         VStack(spacing: 0) {
             navBar(session)
+            filterBar(session)
             ScrollViewReader { proxy in
                 ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 26) {
-                        ForEach(session?.turns ?? []) { turn in
+                    LazyVStack(alignment: .leading, spacing: 20) {
+                        ForEach(rows(session), id: \.turn.id) { row in
+                            let turn = row.turn
+                            if let time = row.time {
+                                Text(time)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 3)
+                                    .background(Color.lxSurface, in: .capsule)
+                                    .frame(maxWidth: .infinity)
+                            }
                             TurnView(turn: turn, controller: controller, editingTurn: $editingTurn,
                                      onOpenWord: { wordToShow = $0 },
                                      onReply: { replyTo = $0 },
@@ -69,11 +142,18 @@ struct ConversationView: View {
                                     withAnimation(.snappy) {
                                         if expandedTurns.contains(turn.id) { expandedTurns.remove(turn.id) } else { expandedTurns.insert(turn.id) }
                                     }
+                                },
+                                showsActions: turn.id == session?.turns.last?.id || turn.id == selectedTurn,
+                                onSelect: {
+                                    withAnimation(.snappy) { selectedTurn = selectedTurn == turn.id ? nil : turn.id }
                                 })
                                 .background {
+                                    // 跳过来的那一轮闪一下；点选的那一轮有一圈淡淡的边框
+                                    let flash = highlighted == turn.id
+                                    let picked = selectedTurn == turn.id
                                     RoundedRectangle(cornerRadius: 20)
-                                        .fill(Color.lxAccent.opacity(highlighted == turn.id ? 0.14 : 0))
-                                        .stroke(Color.lxAccent.opacity(highlighted == turn.id ? 0.6 : 0), lineWidth: 2)
+                                        .fill(Color.lxAccent.opacity(flash ? 0.14 : (picked ? 0.04 : 0)))
+                                        .stroke(Color.lxAccent.opacity(flash ? 0.6 : (picked ? 0.3 : 0)), lineWidth: flash ? 2 : 1.5)
                                         .padding(-10)
                                 }
                                 .scaleEffect(highlighted == turn.id ? 1.02 : 1)
@@ -85,7 +165,8 @@ struct ConversationView: View {
                     .padding(.bottom, 16)
                 }
                 .scrollDismissesKeyboard(.interactively)
-                .defaultScrollAnchor(.bottom)
+                // 平时贴底（最新的在下面）；筛选时从顶部开始排
+                .defaultScrollAnchor(filter == nil ? .bottom : .top)
                 .onScrollGeometryChange(for: Bool.self) { geometry in
                     geometry.contentOffset.y + geometry.containerSize.height < geometry.contentSize.height - 100
                 } action: { _, away in
@@ -119,12 +200,18 @@ struct ConversationView: View {
                 }
                 .onChange(of: session?.turns.count) { old, new in
                     guard let last = session?.turns.last?.id else { return }
-                    if (new ?? 0) > (old ?? 0) { expandedTurns.insert(last) }
+                    if (new ?? 0) > (old ?? 0) {
+                        expandedTurns.insert(last)
+                        // 发了新内容：回到全部，取消点选
+                        filter = nil
+                        selectedTurn = nil
+                    }
                     withAnimation { proxy.scrollTo(last, anchor: .bottom) }
                 }
                 .onChange(of: scrollTarget) {
                     guard let target = scrollTarget else { return }
                     scrollTarget = nil
+                    filter = nil
                     Task {
                         // 等弹窗收起再滚动，然后闪一下这一轮
                         try? await Task.sleep(for: .milliseconds(350))
@@ -138,6 +225,8 @@ struct ConversationView: View {
                 .onChange(of: controller.currentID) {
                     editingTurn = nil
                     expandedTurns = []
+                    filter = nil
+                    selectedTurn = nil
                     if let last = store.session(controller.currentID)?.turns.last?.id {
                         proxy.scrollTo(last, anchor: .bottom)
                     }
