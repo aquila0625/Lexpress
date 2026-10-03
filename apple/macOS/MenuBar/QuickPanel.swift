@@ -24,6 +24,8 @@ final class QuickPanelModel: ObservableObject {
     @Published var pinned = false
     /// 变化时让输入框获得焦点
     @Published var focusRequest = 0
+    /// 程序改写原文时加一，让输入框重建：正在编辑的输入框不会显示从外面写进来的文字
+    @Published private(set) var sourceRevision = 0
 
     let controller: ConversationController
     /// 交给主窗口的会话继续看（完整词条、AI 优化、写回复）
@@ -39,6 +41,7 @@ final class QuickPanelModel: ObservableObject {
         task?.cancel()
         origin = .input
         source = ""
+        sourceRevision += 1
         image = nil
         reset()
         focusRequest += 1
@@ -48,6 +51,7 @@ final class QuickPanelModel: ObservableObject {
         task?.cancel()
         self.origin = origin
         source = text
+        sourceRevision += 1
         image = nil
         retranslate()
     }
@@ -67,6 +71,7 @@ final class QuickPanelModel: ObservableObject {
         self.origin = origin
         self.image = image
         source = ""
+        sourceRevision += 1
         reset()
         working = true
         task = Task {
@@ -80,6 +85,7 @@ final class QuickPanelModel: ObservableObject {
                 return
             }
             source = text
+            sourceRevision += 1
             if origin == .recognize {
                 Clipboard.copy(text)
                 ClipboardWatcher.markOwnWrite()
@@ -164,6 +170,7 @@ struct QuickPanelView: View {
                 .lineLimit(1...6)
                 .focused($focused)
                 .onSubmit { model.retranslate() }
+                .id(model.sourceRevision)
                 .padding(10)
                 .background(Color.lxSurface, in: .rect(cornerRadius: 10))
 

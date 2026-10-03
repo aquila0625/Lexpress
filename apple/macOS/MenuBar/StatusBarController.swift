@@ -11,7 +11,7 @@ enum MenuBarKey {
     static let watchClipboard = "menubar.watchClipboard"
 }
 
-/// 菜单栏图标和它的菜单，以及全局快捷键：
+/// 菜单栏图标：左键弹出小面板，右键是文字菜单。还管着全局快捷键：
 /// ⌥F 翻译选中文字、⌥R 翻译并替换、⌥V 翻译剪贴板、⌥S 截图翻译、⌥A 输入翻译、⌥D 打开主窗口。
 @MainActor
 final class StatusBarController: NSObject, NSMenuDelegate {
@@ -22,6 +22,9 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     private var failedHotKeys: [String] = []
     private var clickOutsideMonitor: Any?
     private var clipboardWatcher: ClipboardWatcher!
+    private let menuState = MenuBarState()
+    private var menuPanel: MenuBarPanel!
+    private var contextMenu: NSMenu!
 
     private let toggleMainWindow: () -> Void
     private let showMainWindow: () -> Void
@@ -53,8 +56,9 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         // 不用“失去焦点”判断：小窗不激活 App，焦点随时可能被系统交还给原来的 App。
         clickOutsideMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
             Task { @MainActor in
-                guard let self, !self.model.pinned, self.panel.isVisible else { return }
-                self.panel.orderOut(nil)
+                guard let self else { return }
+                self.menuPanel.orderOut(nil)
+                if !self.model.pinned, self.panel.isVisible { self.panel.orderOut(nil) }
             }
         }
 
@@ -62,8 +66,12 @@ final class StatusBarController: NSObject, NSMenuDelegate {
             button.image = NSImage(systemSymbolName: "translate", accessibilityDescription: "Q-Translator")
             button.image?.isTemplate = true
             button.toolTip = "Q-Translator 快译"
+            button.target = self
+            button.action = #selector(statusItemClicked)
+            button.sendAction(on: [.leftMouseUp, .rightMouseUp])
         }
-        statusItem.menu = makeMenu()
+        contextMenu = makeMenu()
+        menuPanel = MenuBarPanel(rootView: MenuBarView(state: menuState, actions: makeActions()))
         registerHotKeys()
 
         clipboardWatcher = ClipboardWatcher { [weak self] pasteboard in self?.clipboardChanged(pasteboard) }
@@ -202,7 +210,94 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         }
     }
 
-    // MARK: 菜单
+    // MARK: 菜单栏图标
+
+    @objc private func statusItemClicked() {
+        if NSApp.currentEvent?.type == .rightMouseUp {
+            menuPanel.orderOut(nil)
+            statusItem.menu = contextMenu
+            statusItem.button?.performClick(nil)
+            statusItem.menu = nil
+        } else if menuPanel.isVisible {
+            menuPanel.orderOut(nil)
+        } else if let button = statusItem.button {
+            refreshMenuState()
+            menuPanel.show(below: button)
+            menuState.focusRequest += 1
+        }
+    }
+
+    private func refreshMenuState() {
+        menuState.hasAccessibility = SelectionReader.hasPermission
+        menuState.watchClipboard = clipboardWatcher.isRunning
+        menuState.hideDockIcon = UserDefaults.standard.bool(forKey: MenuBarKey.hideDockIcon)
+        menuState.launchAtLogin = SMAppService.mainApp.status == .enabled
+    }
+
+    private func makeActions() -> MenuBarActions {
+        // 先收起面板再做事。面板不激活 App，所以别的 App 里选中的文字还在，
+        // 稍等一下让那个 App 的窗口重新拿到键盘焦点，再去读选中的文字。
+        func run(_ delay: Bool = false, _ action: @escaping (StatusBarController) -> Void) -> () -> Void {
+            { [weak self] in
+                guard let self else { return }
+                self.menuPanel.orderOut(nil)
+                Task { @MainActor in
+                    if delay { try? await Task.sleep(for: .milliseconds(150)) }
+                    action(self)
+                }
+            }
+        }
+        return MenuBarActions(
+            translateText: { [weak self] text in
+                self?.menuPanel.orderOut(nil)
+                self?.showPanel(origin: .input, text: text)
+            },
+            selection: run(true) { $0.translateSelection() },
+            replace: run(true) { $0.translateAndReplace() },
+            clipboard: run { $0.translateClipboard() },
+            screenshot: run { $0.translateScreenshot() },
+            recognize: run { $0.translateScreenshot(onlyRecognize: true) },
+            mainWindow: run { $0.showMainWindow() },
+            settings: run { $0.openSettings() },
+            quit: { NSApp.terminate(nil) },
+            requestPermission: run { _ in SelectionReader.requestPermission() },
+            setWatchClipboard: { [weak self] in self?.setWatchClipboard($0) },
+            setHideDockIcon: { [weak self] in self?.setHideDockIcon($0) },
+            setLaunchAtLogin: { [weak self] in self?.setLaunchAtLogin($0) }
+        )
+    }
+
+    // MARK: 开关
+
+    private func setWatchClipboard(_ on: Bool) {
+        on ? clipboardWatcher.start() : clipboardWatcher.stop()
+        UserDefaults.standard.set(on, forKey: MenuBarKey.watchClipboard)
+        refreshMenuState()
+    }
+
+    private func setHideDockIcon(_ hide: Bool) {
+        UserDefaults.standard.set(hide, forKey: MenuBarKey.hideDockIcon)
+        NSApp.setActivationPolicy(hide ? .accessory : .regular)
+        refreshMenuState()
+    }
+
+    private func setLaunchAtLogin(_ on: Bool) {
+        let service = SMAppService.mainApp
+        do {
+            if on {
+                try service.register()
+                // 系统要求用户在设置里确认一次
+                if service.status == .requiresApproval { SMAppService.openSystemSettingsLoginItems() }
+            } else {
+                try service.unregister()
+            }
+        } catch {
+            SMAppService.openSystemSettingsLoginItems()
+        }
+        refreshMenuState()
+    }
+
+    // MARK: 右键菜单
 
     private func makeMenu() -> NSMenu {
         let menu = NSMenu()
@@ -252,14 +347,7 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     @objc private func menuClipboard() { translateClipboard() }
     @objc private func menuReplace() { translateAndReplace() }
 
-    @objc private func menuToggleClipboard() {
-        if clipboardWatcher.isRunning {
-            clipboardWatcher.stop()
-        } else {
-            clipboardWatcher.start()
-        }
-        UserDefaults.standard.set(clipboardWatcher.isRunning, forKey: MenuBarKey.watchClipboard)
-    }
+    @objc private func menuToggleClipboard() { setWatchClipboard(!clipboardWatcher.isRunning) }
     @objc private func menuScreenshot() { translateScreenshot() }
     @objc private func menuRecognize() { translateScreenshot(onlyRecognize: true) }
     @objc private func menuInput() { translateInput() }
@@ -270,23 +358,9 @@ final class StatusBarController: NSObject, NSMenuDelegate {
 
     @objc private func menuToggleDock() {
         let hide = !UserDefaults.standard.bool(forKey: MenuBarKey.hideDockIcon)
-        UserDefaults.standard.set(hide, forKey: MenuBarKey.hideDockIcon)
-        NSApp.setActivationPolicy(hide ? .accessory : .regular)
+        setHideDockIcon(hide)
         if !hide { showMainWindow() }
     }
 
-    @objc private func menuToggleLogin() {
-        let service = SMAppService.mainApp
-        do {
-            if service.status == .enabled {
-                try service.unregister()
-            } else {
-                try service.register()
-                // 系统要求用户在设置里确认一次
-                if service.status == .requiresApproval { SMAppService.openSystemSettingsLoginItems() }
-            }
-        } catch {
-            SMAppService.openSystemSettingsLoginItems()
-        }
-    }
+    @objc private func menuToggleLogin() { setLaunchAtLogin(SMAppService.mainApp.status != .enabled) }
 }
